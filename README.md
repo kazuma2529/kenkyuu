@@ -88,6 +88,28 @@ The most critical parameter for particle splitting is `erosion_radius`. We condu
 --erosion_radius 7  # For very tightly packed particles
 ```
 
+### **Automatic Radius Selection (NEW 2025-06-19)**
+
+最新アップデートで、`--auto_radius` オプションにより **半径 r を自動探索** できるようになりました。
+
+```bash
+python scripts/run_pipeline.py \
+    --mask_dir data/masks_otsu \
+    --auto_radius               # 自動で最適 r を決定
+```
+
+主な特徴：
+
+| 機能               | 説明                                                                |
+| ------------------ | ------------------------------------------------------------------- |
+| 候補半径の指定     | `--radius_range "1,2,3,4,5,6,7"` (カンマ区切り)。デフォルトは 1-7。 |
+| プラトー判定       | 粒子数変化率 < **1 %** になった時点で探索終了。                     |
+| 粒子数レンジの制約 | `min_particles` と `max_particles` (config 由来) も判定基準に利用。 |
+| キャッシュ再利用   | 同一 r のラベルファイルが存在すれば再計算せずに再利用。             |
+| ログ出力           | 検索過程の `{r: particle_count}` を DEBUG レベルで全列挙。          |
+
+探索後は `labels_r<best_r>.npy` が生成され、パイプラインは最適 r で後続処理を実行します。
+
 ## 🚀 Quick Start
 
 ### 1. Installation
@@ -137,17 +159,19 @@ python scripts/evaluate_baseline.py \
 
 ## 📋 Command Reference
 
-| Script                 | Purpose                | Key Options                     |
-| ---------------------- | ---------------------- | ------------------------------- |
-| `run_pipeline.py`      | Full analysis pipeline | `--erosion_radius`, `--verbose` |
-| `evaluate_baseline.py` | Mask evaluation        | `--gt_dir`, `--out_csv`         |
+| Script                 | Purpose                | Key Options                                      |
+| ---------------------- | ---------------------- | ------------------------------------------------ |
+| `run_pipeline.py`      | Full analysis pipeline | `--erosion_radius`, `--auto_radius`, `--verbose` |
+| `evaluate_baseline.py` | Mask evaluation        | `--gt_dir`, `--out_csv`                          |
 
 ### Pipeline Options
 
 - `--img_dir`: Directory containing CT images (default: `data/images`)
 - `--mask_dir`: Directory containing input masks (default: `data/masks_otsu`)
 - `--output_dir`: Base output directory (default: `output`)
-- `--erosion_radius`: Erosion radius for particle splitting (**default: 5**, optimized)
+- `--erosion_radius`: Erosion radius for particle splitting (手動指定)。`--auto_radius` 使用時は無視
+- `--auto_radius`: 候補半径を総当たりし最適 r を自動決定
+- `--radius_range`: 自動探索で使用する候補半径リスト（例: `1,2,3,4,5,6,7`）
 - `--config`: Configuration file (e.g., `config/optimized_sand_particles.yaml`)
 - `--interactive`: Launch napari 3D viewer after processing
 - `--verbose`: Enable detailed logging
@@ -160,6 +184,7 @@ output/run_YYYYMMDD_HHMM/
 ├── masks_pred/              # Processed masks (CLAHE + Otsu + morphology)
 ├── volume.npy              # 3D boolean volume (196×512×512)
 ├── labels_r5.npy           # Labeled particles (OPTIMIZED: radius=5)
+├── labels_rX.npy           # 自動または手動指定 r=X のラベル Volume
 ├── contact_counts.csv      # Per-particle contact counts
 ├── contacts_summary.csv    # Statistical summary (mean=7.62, median=6.0)
 └── hist_contacts.png       # Contact distribution histogram
@@ -169,6 +194,7 @@ output/run_YYYYMMDD_HHMM/
 
 - **`volume.npy`**: 3D boolean array representing particle regions
 - **`labels_r5.npy`**: Integer labels for each particle (1,453 particles)
+- **`labels_rX.npy`**: Integer labels for each particle (X particles)
 - **`contact_counts.csv`**: Detailed contact analysis per particle
 - **`contacts_summary.csv`**: Statistical summary and outlier analysis
 - **`hist_contacts.png`**: Visualization of contact distribution

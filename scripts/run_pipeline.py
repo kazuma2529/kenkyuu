@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from particle_analysis.config import DEFAULT_CONFIG, PipelineConfig
 from particle_analysis.utils.common import setup_logging, Timer, ensure_directory
 from particle_analysis.processing import process_masks
-from particle_analysis.volume_ops import stack_masks, split_particles
+from particle_analysis.volume_ops import stack_masks, split_particles, optimize_radius
 from particle_analysis.contact_analysis import count_contacts, save_contact_csv, analyze_contacts
 
 
@@ -161,6 +161,10 @@ Examples:
                        help="Skip training phase (use baseline masks)")
     parser.add_argument("--erosion_radius", type=int, default=5,
                        help="Erosion radius for particle splitting (default=5, optimized for sand particles)")
+    parser.add_argument("--auto_radius", action="store_true",
+                       help="Automatically determine optimal erosion radius by evaluating multiple candidates")
+    parser.add_argument("--radius_range", type=str, default="1,2,3,4,5,6,7",
+                       help="Comma-separated list of candidate radii for auto selection (used with --auto_radius)")
     parser.add_argument("--verbose", action="store_true",
                        help="Enable verbose logging")
     parser.add_argument("--interactive", action="store_true",
@@ -178,8 +182,11 @@ Examples:
     else:
         config = DEFAULT_CONFIG
     
-    # Override config with command line arguments
-    if args.erosion_radius:
+    # Override config with command line arguments (manual radius takes precedence)
+    if args.auto_radius:
+        # auto selection will run later; keep placeholder value for now
+        pass
+    elif args.erosion_radius:
         config.splitting.erosion_radius = args.erosion_radius
     
     # Create timestamped output directory
@@ -198,7 +205,24 @@ Examples:
         # Step 2: Volume creation
         volume_path = run_volume_creation(masks_dir, str(output_dir), config)
         
-        # Step 3: Particle splitting
+        # Step 3: Determine erosion radius (auto or manual) and split particles
+        if args.auto_radius:
+            candidate_radii = [int(r) for r in args.radius_range.split(',') if r.strip().isdigit()]
+            best_r, radius_counts = optimize_radius(
+                vol_path=str(volume_path),
+                output_dir=str(output_dir),
+                radii=candidate_radii,
+                connectivity=config.splitting.connectivity,
+                plateau_threshold=0.01,
+                min_particles=config.splitting.min_particles,
+                max_particles=config.splitting.max_particles,
+            )
+
+            # Update config with the selected radius
+            config.splitting.erosion_radius = best_r
+            logging.info("Auto-selected erosion radius: %d (candidates: %s)", best_r, candidate_radii)
+
+        # Now run splitting with the chosen radius (auto or manual)
         labels_path = run_particle_splitting(volume_path, str(output_dir), config)
         
         # Optional interactive view

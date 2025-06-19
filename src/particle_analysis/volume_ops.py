@@ -167,4 +167,141 @@ def label_volume(vol_path: str, out_labels: str, connectivity: int = 6) -> int:
     np.save(out_labels, labels)
     
     logger.info(f"Labeled {num_labels} connected components")
-    return num_labels 
+    return num_labels
+
+
+# === NEW OPTIMIZATION UTILITY ==================================================
+
+def optimize_radius(
+    vol_path: str,
+    output_dir: str,
+    radii: list[int],
+    connectivity: int = 6,
+    plateau_threshold: float = 0.01,
+    min_particles: int | None = None,
+    max_particles: int | None = None,
+) -> tuple[int, dict[int, int]]:
+    """Find an appropriate erosion radius by evaluating candidate values.
+
+    The function iteratively runs ``split_particles`` for each candidate
+    radius and records the resulting particle count.  The first radius that
+    satisfies *either* of the following conditions is selected:
+
+    1. The relative change in particle count from the previous radius falls
+       below ``plateau_threshold`` (i.e. the curve has stabilised).
+    2. The particle count lies inside the user-specified ``[min_particles,
+       max_particles]`` interval.
+
+    If neither condition is met, the radius that yields the particle count
+    closest to the centre of the permissible range (or the one with the
+    highest particle count if no limits were provided) is returned.
+
+    Parameters
+    ----------
+    vol_path
+        Path to the 3-D binary mask volume (``.npy``).
+    output_dir
+        Directory where the temporary label files (``labels_r{r}.npy``) will
+        be stored.  The directory is created if it does not exist.
+    radii
+        List of integer radii (in voxels) to try, e.g. ``[1, 2, 3, 4, 5]``.
+    connectivity
+        Neighbourhood connectivity passed through to ``split_particles``.
+    plateau_threshold
+        Relative change threshold (e.g. ``0.01`` = 1 %) used to detect the
+        plateau of the particle-count curve.
+    min_particles / max_particles
+        Optional hard bounds on what constitutes a *sensible* number of
+        particles.  These usually come from prior domain knowledge.
+
+    Returns
+    -------
+    best_radius
+        The selected optimum radius.
+    counts
+        Mapping ``{radius -> particle_count}`` for all evaluated radii.
+    """
+
+    from collections import OrderedDict
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    counts: dict[int, int] = OrderedDict()
+    prev_count: int | None = None
+    best_radius: int | None = None
+
+    # --- run splitting for each candidate radius --------------------------------
+    for r in radii:
+        label_path = output_dir / f"labels_r{r}.npy"
+
+        if label_path.exists():
+            # Re-use existing result if already computed earlier in the session.
+            labels = np.load(label_path)
+            num_particles = int(labels.max())
+            logger.debug(
+                "Re-using cached labels for radius %d -> %d particles", r, num_particles
+            )
+        else:
+            num_particles = split_particles(
+                vol_path=str(vol_path),
+                out_labels=str(label_path),
+                radius=r,
+                connectivity=connectivity,
+            )
+
+        counts[r] = num_particles
+
+        # --- plateau criterion ---------------------------------------------------
+        if prev_count is not None and prev_count > 0:
+            rel_change = abs(num_particles - prev_count) / prev_count
+            if rel_change < plateau_threshold:
+                best_radius = r
+                logger.info(
+                    "Plateau reached at r=%d (Δ=%.2f%%). Selecting this radius.",
+                    r,
+                    rel_change * 100,
+                )
+                break
+
+        # --- hard bounds criterion ----------------------------------------------
+        if (
+            min_particles is not None
+            and max_particles is not None
+            and min_particles <= num_particles <= max_particles
+        ):
+            best_radius = r
+            logger.info(
+                "Particle count %d within [%d, %d] at r=%d – selecting this radius.",
+                num_particles,
+                min_particles,
+                max_particles,
+                r,
+            )
+            break
+
+        prev_count = num_particles
+
+    # -----------------------------------------------------------------------------
+    if best_radius is None:
+        # Fallback strategy: choose the radius whose particle count is closest to
+        # the middle of the permissible range, or simply the one yielding the
+        # highest count if no bounds were provided.
+        if min_particles is not None and max_particles is not None:
+            target = (min_particles + max_particles) / 2
+            best_radius = min(counts, key=lambda k: abs(counts[k] - target))
+            logger.warning(
+                "No radius satisfied plateau/bound criteria; using r=%d (closest to mid-range).",
+                best_radius,
+            )
+        else:
+            best_radius = max(counts, key=counts.get)
+            logger.warning(
+                "No radius satisfied plateau/bound criteria; using r=%d (max particle count).",
+                best_radius,
+            )
+
+    logger.info("Optimal erosion radius determined: r=%d", best_radius)
+    logger.debug("Radius search summary: %s", counts)
+
+    return best_radius, counts 
