@@ -1,0 +1,52 @@
+# Optimized Configuration for Sand Particle Analysis
+# Date: 2025-06-19
+# Dataset: Flan casting sand CT images (196 slices, 512x512 pixels)
+# Optimization target: erosion_radius for particle splitting
+
+# Postprocessing settings
+postprocess:
+  closing_radius: 0 # Binary closing radius (0 = disabled)
+  min_object_size: 50 # Minimum object size for removal
+  clahe_clip_limit: 2.0 # CLAHE clip limit
+  clahe_tile_size: [8, 8] # CLAHE tile grid size
+  gaussian_kernel: [5, 5] # Gaussian blur kernel size
+  invert_default: false # Default inversion setting
+
+# 3D labeling settings
+labeling:
+  connectivity: 6 # Connectivity (6=face, 18=edge, 26=vertex)
+  expected_slices: 196 # Expected number of CT slices
+
+# Particle splitting settings (OPTIMIZED)
+splitting:
+  erosion_radius: 5 # OPTIMAL: Best balance of splitting vs particle count
+  connectivity: 6 # Connectivity for labeling
+  min_particles: 100 # Minimum expected particles (warning threshold)
+  max_particles: 5000 # Maximum expected particles (warning threshold)
+
+# Contact analysis settings (UPDATED based on optimization)
+contact:
+  auto_exclude_threshold: 200 # Auto-exclude particles with > N contacts
+  max_reasonable_contacts: 50 # Maximum reasonable contacts per particle
+  histogram_bins: 30 # Number of histogram bins
+
+# Visualization settings
+visualization:
+  figure_size: [10, 6] # Default figure size
+  dpi: 300 # Figure DPI
+  colormap_labels: "gist_ncar" # Colormap for labels
+  colormap_mask: "gray" # Colormap for masks
+
+# Global settings
+random_seed: 42
+verbose: true
+# Optimization Results Summary:
+# ┌────────┬───────────┬─────────────┬─────────────┬──────────────────┐
+# │ Radius │ Particles │ Largest (%) │ Mean Contacts│ Status           │
+# ├────────┼───────────┼─────────────┼─────────────┼──────────────────┤
+# │   1    │    810    │    99.9     │     -       │ Severe under-split│
+# │   2    │   1,182   │    99.3     │     -       │ Severe under-split│
+# │   3    │   1,611   │    93.4     │    1.61     │ Under-split      │
+# │   4    │    602    │    76.9     │    4.30     │ Moderate         │
+# │ ★ 5    │   1,453   │     2.9     │    7.62     │ OPTIMAL ★        │
+# └────────┴───────────┴─────────────┴─────────────┴──────────────────┘

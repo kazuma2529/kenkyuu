@@ -134,7 +134,21 @@ def run_contact_analysis(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="3D Particle Analysis Pipeline")
+    parser = argparse.ArgumentParser(
+        description="3D Particle Analysis Pipeline",
+        epilog="""
+Examples:
+  # Use optimized settings (default erosion_radius=5)
+  python scripts/run_pipeline.py --mask_dir data/masks_otsu
+  
+  # Use custom erosion radius
+  python scripts/run_pipeline.py --mask_dir data/masks_otsu --erosion_radius 3
+  
+  # Use predefined optimized config file
+  python scripts/run_pipeline.py --config config/optimized_sand_particles.yaml
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--img_dir", default="data/images",
                        help="Directory containing CT images")
     parser.add_argument("--mask_dir", default="data/masks_otsu", 
@@ -142,11 +156,11 @@ def main():
     parser.add_argument("--output_dir", default="output",
                        help="Base output directory")
     parser.add_argument("--config", type=str,
-                       help="Path to configuration file")
+                       help="Path to configuration file (e.g., config/optimized_sand_particles.yaml)")
     parser.add_argument("--skip_train", action="store_true",
                        help="Skip training phase (use baseline masks)")
-    parser.add_argument("--erosion_radius", type=int, default=2,
-                       help="Erosion radius for particle splitting")
+    parser.add_argument("--erosion_radius", type=int, default=5,
+                       help="Erosion radius for particle splitting (default=5, optimized for sand particles)")
     parser.add_argument("--verbose", action="store_true",
                        help="Enable verbose logging")
     parser.add_argument("--interactive", action="store_true",
