@@ -1,9 +1,0 @@
-metric,value
-total_particles,1174
-mean_contacts,1.608
-median_contacts,1.000
-std_contacts,1.287
-min_contacts,1
-max_contacts,19
-q25_contacts,1.000
-q75_contacts,2.000
