@@ -149,6 +149,8 @@ def main():
                        help="Erosion radius for particle splitting")
     parser.add_argument("--verbose", action="store_true",
                        help="Enable verbose logging")
+    parser.add_argument("--interactive", action="store_true",
+                       help="Launch napari viewer after volume/label creation")
     
     args = parser.parse_args()
     
@@ -184,6 +186,14 @@ def main():
         
         # Step 3: Particle splitting
         labels_path = run_particle_splitting(volume_path, str(output_dir), config)
+        
+        # Optional interactive view
+        if args.interactive:
+            try:
+                from particle_analysis.visualize import view_volume
+                view_volume(volume_path, labels_path)
+            except Exception as e:
+                logging.error(f"Interactive view failed: {e}")
         
         # Step 4: Contact counting
         csv_path = run_contact_counting(labels_path, str(output_dir), config)

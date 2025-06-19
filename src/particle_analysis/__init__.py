@@ -30,5 +30,7 @@ __all__ = [
     "PipelineConfig",
     "setup_logging",
     "Timer",
-    "ensure_directory"
+    "ensure_directory",
+    "view_volume",
+    "NapariUnavailable"
 ] 

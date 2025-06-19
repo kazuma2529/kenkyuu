@@ -205,3 +205,36 @@ This project is part of 3D particle analysis research. Please cite appropriately
 **Status**: Production Ready ✅  
 **Last Updated**: 2025-06-18  
 **Version**: 1.0.0
+
+## 🖥️ Interactive 3-D Viewing (napari)
+
+Install optional dependency:
+
+```bash
+pip install "napari[all]"
+```
+
+### Launch viewer directly
+
+```bash
+python scripts/view_volume.py \
+    --volume output/run_*/volume.npy \
+    --labels output/run_*/labels_r2.npy \
+    --rendering mip   # mip | attenuated_mip | iso
+```
+
+### Launch viewer automatically after pipeline
+
+```bash
+python scripts/run_pipeline.py \
+    --img_dir data/images \
+    --mask_dir data/masks_otsu \
+    --interactive   # ← これを付けるだけ
+```
+
+操作方法:
+
+- マウスドラッグ: 回転
+- ホイール: ズーム
+- 右クリック+ドラッグ: 平行移動
+- ラベルレイヤを左クリックすると **StatusBar に粒子 ID** が表示されます。
