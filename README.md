@@ -35,14 +35,19 @@ This pipeline processes CT slice images to:
 
 ```
 ├── src/                          # Core package
-│   ├── particle_analysis/        # Main analysis modules
-│   │   ├── processing.py         # Image processing and mask cleaning
-│   │   ├── volume_ops.py         # 3D volume operations and particle splitting
-│   │   ├── contact_analysis.py   # Contact counting and analysis
-│   │   └── evaluation.py         # Evaluation metrics (Dice, IoU)
-│   ├── utils/                    # Utility functions
-│   │   └── common.py            # Logging, timers, file operations
-│   └── config.py                # Configuration management
+│   └── particle_analysis/        # Main analysis modules
+│       ├── __init__.py           # Package interface
+│       ├── config.py             # Configuration management
+│       ├── processing.py         # Image processing and mask cleaning
+│       ├── volume_ops.py         # 3D volume operations and particle splitting
+│       ├── contact_analysis.py   # Unified contact interface
+│       ├── contact_counting.py   # Contact detection algorithms
+│       ├── contact_statistics.py # Statistical analysis
+│       ├── evaluation.py         # Evaluation metrics (Dice, IoU)
+│       ├── visualize.py          # 3D visualization with napari
+│       └── utils/                # Utility functions
+│           ├── __init__.py
+│           └── common.py         # Logging, timers, file operations
 ├── scripts/                      # Command-line scripts
 │   ├── run_pipeline.py          # Main pipeline orchestrator
 │   └── evaluate_baseline.py     # Baseline evaluation script
@@ -109,6 +114,13 @@ python scripts/run_pipeline.py \
 | ログ出力           | 検索過程の `{r: particle_count}` を DEBUG レベルで全列挙。          |
 
 探索後は `labels_r<best_r>.npy` が生成され、パイプラインは最適 r で後続処理を実行します。
+
+**自動選択アルゴリズム:**
+
+- 候補半径を順次試行し、粒子数をカウント
+- 前回からの変化率が 1%未満になったら最適点として選択
+- または粒子数が指定範囲内に入った場合も選択
+- フォールバック: 中央値に最も近い結果を選択
 
 ## 🚀 Quick Start
 
@@ -356,10 +368,13 @@ visualization:
 
 ## 📚 Dependencies
 
-- **Core**: numpy, scipy, scikit-image, opencv-python
-- **Analysis**: pandas, matplotlib
-- **UI**: tqdm (progress bars)
-- **Testing**: unittest (built-in)
+- **Core**: numpy≥1.21.0, scipy≥1.7.0, scikit-image≥0.18.0, opencv-python≥4.5.0
+- **Analysis**: pandas≥1.3.0, matplotlib≥3.5.0
+- **UI**: tqdm≥4.62.0 (progress bars)
+- **Configuration**: pyyaml≥6.0 (YAML config files)
+- **Visualization**: napari≥0.4.15 (optional, for 3D viewing)
+- **Testing**: pytest≥7.0.0 (testing framework)
+- **Development**: black≥22.0.0 (formatting), flake8≥4.0.0 (linting)
 
 ## 🤝 Contributing
 
