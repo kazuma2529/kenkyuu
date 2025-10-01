@@ -19,10 +19,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from particle_analysis.config import DEFAULT_CONFIG, PipelineConfig
-from particle_analysis.utils.common import setup_logging, Timer, ensure_directory
+from particle_analysis.utils import setup_logging, Timer, ensure_directory
 from particle_analysis.processing import process_masks
-from particle_analysis.volume_ops import stack_masks, split_particles, optimize_radius
-from particle_analysis.contact_analysis import count_contacts, save_contact_csv, analyze_contacts
+from particle_analysis.volume import (
+    stack_masks, split_particles, optimize_radius_advanced, 
+    OptimizationSummary, OptimizationResult
+)
+from particle_analysis.contact import count_contacts, save_contact_csv, analyze_contacts
 
 
 def run_mask_processing(
@@ -163,7 +166,7 @@ Examples:
                        help="Erosion radius for particle splitting (default=5, optimized for sand particles)")
     parser.add_argument("--auto_radius", action="store_true",
                        help="Automatically determine optimal erosion radius by evaluating multiple candidates")
-    parser.add_argument("--radius_range", type=str, default="1,2,3,4,5,6,7",
+    parser.add_argument("--radius_range", type=str, default="1,2,3,4,5,6,7,8,9,10",
                        help="Comma-separated list of candidate radii for auto selection (used with --auto_radius)")
     parser.add_argument("--verbose", action="store_true",
                        help="Enable verbose logging")
@@ -208,19 +211,39 @@ Examples:
         # Step 3: Determine erosion radius (auto or manual) and split particles
         if args.auto_radius:
             candidate_radii = [int(r) for r in args.radius_range.split(',') if r.strip().isdigit()]
-            best_r, radius_counts = optimize_radius(
+            
+            # Use advanced optimization with comprehensive analysis
+            logging.info("Starting advanced radius optimization...")
+            optimization_summary = optimize_radius_advanced(
                 vol_path=str(volume_path),
                 output_dir=str(output_dir),
                 radii=candidate_radii,
                 connectivity=config.splitting.connectivity,
+                complete_analysis=True,  # Calculate all metrics including contacts
+                early_stopping=False,    # Complete full analysis for GUI
                 plateau_threshold=0.01,
-                min_particles=config.splitting.min_particles,
-                max_particles=config.splitting.max_particles,
             )
 
             # Update config with the selected radius
-            config.splitting.erosion_radius = best_r
-            logging.info("Auto-selected erosion radius: %d (candidates: %s)", best_r, candidate_radii)
+            config.splitting.erosion_radius = optimization_summary.best_radius
+            logging.info(
+                f"Auto-selected erosion radius: {optimization_summary.best_radius} "
+                f"(method: {optimization_summary.optimization_method})"
+            )
+            
+            # Save optimization results for potential GUI use
+            optimization_results_path = output_dir / "optimization_results.csv"
+            if optimization_summary.to_dataframe() is not None:
+                optimization_summary.to_dataframe().to_csv(optimization_results_path, index=False)
+                logging.info(f"Optimization results saved to: {optimization_results_path}")
+            
+            # Log detailed results
+            for result in optimization_summary.results:
+                logging.info(
+                    f"  r={result.radius}: {result.particle_count} particles, "
+                    f"{result.largest_particle_ratio:.1%} largest, "
+                    f"{result.mean_contacts:.1f} avg contacts"
+                )
 
         # Now run splitting with the chosen radius (auto or manual)
         labels_path = run_particle_splitting(volume_path, str(output_dir), config)
