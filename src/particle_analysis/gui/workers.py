@@ -21,11 +21,12 @@ class OptimizationWorker(QThread):
     optimization_complete = pyqtSignal(object)  # OptimizationSummary
     error_occurred = pyqtSignal(str)  # Error message
     
-    def __init__(self, vol_path: str, output_dir: str, radii: List[int]):
+    def __init__(self, vol_path: str, output_dir: str, radii: List[int], connectivity: int = 6):
         super().__init__()
         self.vol_path = vol_path
         self.output_dir = output_dir
         self.radii = radii
+        self.connectivity = connectivity
         self.is_cancelled = False
     
     def run(self):
@@ -39,11 +40,12 @@ class OptimizationWorker(QThread):
             
             # Run optimization
             logger.info(f"Starting optimization for radii: {self.radii}")
+            logger.info(f"Using connectivity: {self.connectivity}")
             summary = optimize_radius_advanced(
                 vol_path=self.vol_path,
                 output_dir=self.output_dir,
                 radii=self.radii,
-                connectivity=6,
+                connectivity=self.connectivity,
                 progress_callback=progress_callback,
                 complete_analysis=True,
                 early_stopping=False

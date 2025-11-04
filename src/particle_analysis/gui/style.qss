@@ -393,3 +393,27 @@ QMessageBox QPushButton {
     padding: 8px 16px;
 }
 
+/* ============================================
+   Step Cards (Simple Mode)
+   ============================================ */
+QWidget#stepCard {
+    background-color: #34373f;
+    border: 2px solid #4a5059;
+    border-radius: 8px;
+    padding: 16px;
+}
+
+QWidget#stepCard:hover {
+    border-color: #5a9bd3;
+}
+
+/* Status Labels */
+QLabel#folderStatusLabel {
+    background-color: transparent;
+    padding: 12px;
+    border-radius: 6px;
+    min-height: 40px;
+}
+
+/* Advanced Toggle Button - handled by inline style for better control */
+

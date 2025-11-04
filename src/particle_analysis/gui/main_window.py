@@ -60,128 +60,290 @@ class ParticleAnalysisGUI(QWidget):
         self.resize(1600, 1000)
     
     def setup_ui(self):
-        """Setup the main user interface."""
-        layout = QHBoxLayout(self)
+        """Setup the main user interface with simplified UX."""
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(30, 30, 30, 30)
         
-        # Left panel: Controls
-        left_panel = self.create_control_panel()
-        layout.addWidget(left_panel, 1)
+        # === Top Section: Simple Controls ===
+        simple_controls = self.create_simple_controls()
+        main_layout.addWidget(simple_controls)
         
-        # Right panel: Results
-        right_panel = self.create_results_panel()
-        layout.addWidget(right_panel, 2)
+        # === Middle Section: Progress & Results ===
+        progress_section = self.create_progress_section()
+        main_layout.addWidget(progress_section, 1)
+        
+        # === Bottom Section: Advanced Settings (collapsible) ===
+        self.advanced_section = self.create_advanced_section()
+        self.advanced_section.setVisible(False)  # Hidden by default
+        main_layout.addWidget(self.advanced_section)
         
         # Initialize default values
         self.max_radius_spinbox.setValue(10)
         self.update_radius_preview()
     
-    def create_control_panel(self):
-        """Create the left control panel."""
+    def create_simple_controls(self):
+        """Create simplified control panel for non-technical users."""
         panel = QWidget()
         layout = QVBoxLayout(panel)
+        layout.setSpacing(20)
         
-        # File Selection
-        file_group = QGroupBox("CT Image Selection")
-        file_layout = QVBoxLayout(file_group)
+        # Title and Instructions
+        title_label = QLabel("3D Particle Analysis - Simple Mode")
+        title_font = QFont()
+        title_font.setPointSize(16)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        title_label.setStyleSheet("color: #5a9bd3;")
         
-        self.folder_label = QLabel("📁 No folder selected")
-        self.folder_label.setObjectName("folderLabel")
+        instruction_label = QLabel("Just 2 simple steps to analyze your CT images:")
+        instruction_label.setStyleSheet("color: #a0a0a0; font-size: 11pt;")
         
-        self.select_folder_btn = QPushButton("📁 Select CT Images Folder...")
+        layout.addWidget(title_label)
+        layout.addWidget(instruction_label)
+        
+        # Buttons Layout
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(20)
+        
+        # Step 1: Folder Selection
+        step1_widget = QWidget()
+        step1_layout = QVBoxLayout(step1_widget)
+        step1_layout.setSpacing(10)
+        
+        step1_label = QLabel("Step 1️⃣")
+        step1_label.setStyleSheet("font-size: 13pt; font-weight: bold; color: #5a9bd3;")
+        
+        self.select_folder_btn = QPushButton("📁 Select CT Images Folder")
         self.select_folder_btn.setObjectName("selectFolderButton")
-        self.select_folder_btn.setMinimumHeight(40)
+        self.select_folder_btn.setMinimumHeight(60)
+        self.select_folder_btn.setMinimumWidth(280)
         
-        self.image_count_label = QLabel("")
-        self.image_count_label.setObjectName("imageCountLabel")
+        self.folder_status_label = QLabel("No folder selected")
+        self.folder_status_label.setObjectName("folderLabel")
+        self.folder_status_label.setAlignment(Qt.AlignCenter)
+        self.folder_status_label.setWordWrap(True)
         
-        file_layout.addWidget(self.folder_label)
-        file_layout.addWidget(self.select_folder_btn)
-        file_layout.addWidget(self.image_count_label)
+        step1_layout.addWidget(step1_label, alignment=Qt.AlignCenter)
+        step1_layout.addWidget(self.select_folder_btn)
+        step1_layout.addWidget(self.folder_status_label)
         
-        # Optimization Parameters
-        params_group = QGroupBox("Optimization Parameters")
-        params_layout = QGridLayout(params_group)
+        # Step 2: Start Analysis
+        step2_widget = QWidget()
+        step2_layout = QVBoxLayout(step2_widget)
+        step2_layout.setSpacing(10)
         
-        params_layout.addWidget(QLabel("Maximum Radius:"), 0, 0)
-        self.max_radius_spinbox = QSpinBox()
-        self.max_radius_spinbox.setRange(2, 15)
-        self.max_radius_spinbox.setValue(10)
-        params_layout.addWidget(self.max_radius_spinbox, 0, 1)
-        
-        self.radius_preview_label = QLabel("")
-        self.radius_preview_label.setStyleSheet("color: #5a9bd3; font-size: 11px;")
-        params_layout.addWidget(self.radius_preview_label, 1, 0, 1, 2)
-        
-        # Execution Controls
-        exec_group = QGroupBox("Execution")
-        exec_layout = QVBoxLayout(exec_group)
+        step2_label = QLabel("Step 2️⃣")
+        step2_label.setStyleSheet("font-size: 13pt; font-weight: bold; color: #5a9bd3;")
         
         self.start_btn = QPushButton("🚀 Start Analysis (GO)")
         self.start_btn.setObjectName("startButton")
-        self.start_btn.setMinimumHeight(50)
+        self.start_btn.setMinimumHeight(60)
+        self.start_btn.setMinimumWidth(280)
         self.start_btn.setEnabled(False)
+        
+        self.status_label = QLabel("Ready to start")
+        self.status_label.setObjectName("statusLabel")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setStyleSheet("color: #5cb85c;")
+        
+        step2_layout.addWidget(step2_label, alignment=Qt.AlignCenter)
+        step2_layout.addWidget(self.start_btn)
+        step2_layout.addWidget(self.status_label)
+        
+        buttons_layout.addWidget(step1_widget)
+        buttons_layout.addWidget(step2_widget)
+        
+        layout.addLayout(buttons_layout)
+        
+        # Advanced Settings Toggle
+        advanced_toggle_layout = QHBoxLayout()
+        advanced_toggle_layout.addStretch()
+        
+        self.advanced_toggle_btn = QPushButton("⚙️ Advanced Settings")
+        self.advanced_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #5a9bd3;
+                border: 1px solid #5a9bd3;
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-size: 10pt;
+            }
+            QPushButton:hover {
+                background-color: #3a4049;
+            }
+            QPushButton:checked {
+                background-color: #5a9bd3;
+                color: #ffffff;
+            }
+        """)
+        self.advanced_toggle_btn.setCheckable(True)
+        self.advanced_toggle_btn.clicked.connect(self.toggle_advanced_settings)
+        
+        advanced_toggle_layout.addWidget(self.advanced_toggle_btn)
+        layout.addLayout(advanced_toggle_layout)
+        
+        return panel
+    
+    def create_progress_section(self):
+        """Create progress monitoring section."""
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        
+        # Progress Controls
+        progress_controls = QWidget()
+        progress_layout = QHBoxLayout(progress_controls)
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMinimumHeight(30)
         
         self.cancel_btn = QPushButton("❌ Cancel")
         self.cancel_btn.setObjectName("cancelButton")
         self.cancel_btn.setEnabled(False)
+        self.cancel_btn.setMaximumWidth(120)
         
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
+        progress_layout.addWidget(self.progress_bar, 1)
+        progress_layout.addWidget(self.cancel_btn)
         
-        self.status_label = QLabel("Ready")
-        self.status_label.setObjectName("statusLabel")
-        self.status_label.setStyleSheet("color: #5cb85c;")
+        layout.addWidget(progress_controls)
         
-        exec_layout.addWidget(self.start_btn)
-        exec_layout.addWidget(self.cancel_btn)
-        exec_layout.addWidget(self.progress_bar)
-        exec_layout.addWidget(self.status_label)
+        # Tab Widget for Results
+        self.results_tabs = QTabWidget()
         
-        # Final Results Display
-        results_group = QGroupBox("🎯 Optimization Results")
-        results_layout = QVBoxLayout(results_group)
+        # Real-time Results Table Tab
+        self.results_table = ResultsTable()
+        self.results_tabs.addTab(self.results_table, "📊 Real-time Results")
+        
+        # Analysis Graphs Tab
+        self.results_plotter = ResultsPlotter()
+        self.results_tabs.addTab(self.results_plotter, "📈 Analysis Graphs")
+        
+        # Final Results Tab
+        final_results_widget = QWidget()
+        final_results_layout = QVBoxLayout(final_results_widget)
         
         self.final_results_text = QTextEdit()
         self.final_results_text.setObjectName("finalResultsText")
-        self.final_results_text.setMaximumHeight(150)
         self.final_results_text.setReadOnly(True)
+        self.final_results_text.setPlaceholderText("Final optimization results will appear here after analysis completes...")
         
         self.view_3d_btn = QPushButton("🔍 View 3D Results")
         self.view_3d_btn.setObjectName("view3dButton")
         self.view_3d_btn.setEnabled(False)
         self.view_3d_btn.setMinimumHeight(40)
         
-        results_layout.addWidget(self.final_results_text)
-        results_layout.addWidget(self.view_3d_btn)
+        final_results_layout.addWidget(self.final_results_text)
+        final_results_layout.addWidget(self.view_3d_btn)
         
-        # Add all groups to panel
-        layout.addWidget(file_group)
-        layout.addWidget(params_group)
-        layout.addWidget(exec_group)
-        layout.addWidget(results_group)
-        layout.addStretch()
+        self.results_tabs.addTab(final_results_widget, "🎯 Final Results")
+        
+        layout.addWidget(self.results_tabs)
         
         return panel
     
-    def create_results_panel(self):
-        """Create the right results panel."""
-        panel = QWidget()
-        layout = QVBoxLayout(panel)
+    def create_advanced_section(self):
+        """Create advanced settings section (hidden by default)."""
+        group = QGroupBox("⚙️ Advanced Settings")
+        layout = QVBoxLayout(group)
         
-        # Create tab widget
-        tab_widget = QTabWidget()
+        # Erosion Radius Range
+        radius_widget = QWidget()
+        radius_layout = QGridLayout(radius_widget)
         
-        # Results table tab
-        self.results_table = ResultsTable()
-        tab_widget.addTab(self.results_table, "📊 Data Table")
+        radius_label = QLabel("Erosion Radius Range:")
+        radius_label.setStyleSheet("font-weight: bold;")
         
-        # Analysis graphs tab
-        self.results_plotter = ResultsPlotter()
-        tab_widget.addTab(self.results_plotter, "📈 Analysis Graphs")
+        radius_layout.addWidget(radius_label, 0, 0, 1, 2)
+        radius_layout.addWidget(QLabel("Maximum Radius:"), 1, 0)
         
-        layout.addWidget(tab_widget)
+        self.max_radius_spinbox = QSpinBox()
+        self.max_radius_spinbox.setRange(2, 15)
+        self.max_radius_spinbox.setValue(10)
+        self.max_radius_spinbox.setToolTip("Maximum erosion radius to test (default: 10)")
+        radius_layout.addWidget(self.max_radius_spinbox, 1, 1)
         
-        return panel
+        self.radius_preview_label = QLabel("")
+        self.radius_preview_label.setStyleSheet("color: #5a9bd3; font-size: 10pt; padding: 8px;")
+        radius_layout.addWidget(self.radius_preview_label, 2, 0, 1, 2)
+        
+        layout.addWidget(radius_widget)
+        
+        # Contact Analysis Method
+        from qtpy.QtWidgets import QComboBox
+        
+        contact_widget = QWidget()
+        contact_layout = QGridLayout(contact_widget)
+        
+        contact_label = QLabel("Contact Analysis Method:")
+        contact_label.setStyleSheet("font-weight: bold;")
+        
+        contact_layout.addWidget(contact_label, 0, 0, 1, 2)
+        contact_layout.addWidget(QLabel("Connectivity:"), 1, 0)
+        
+        self.connectivity_combo = QComboBox()
+        self.connectivity_combo.addItem("6-Neighborhood (Face Contact) 🔷 Recommended", 6)
+        self.connectivity_combo.addItem("26-Neighborhood (Face+Edge+Corner)", 26)
+        self.connectivity_combo.setCurrentIndex(0)  # Default to 6-neighborhood
+        self.connectivity_combo.setToolTip(
+            "6-Neighborhood: Only face-to-face contacts (more conservative)\n"
+            "26-Neighborhood: Includes edge and corner contacts (more permissive)"
+        )
+        contact_layout.addWidget(self.connectivity_combo, 1, 1)
+        
+        # Description label
+        self.connectivity_desc_label = QLabel(
+            "Face contacts only (physical touching surfaces)"
+        )
+        self.connectivity_desc_label.setStyleSheet("color: #5a9bd3; font-size: 10pt; padding: 8px;")
+        self.connectivity_desc_label.setWordWrap(True)
+        contact_layout.addWidget(self.connectivity_desc_label, 2, 0, 1, 2)
+        
+        # Connect signal to update description
+        self.connectivity_combo.currentIndexChanged.connect(self.update_connectivity_description)
+        
+        layout.addWidget(contact_widget)
+        
+        # Info Label
+        info_label = QLabel(
+            "ℹ️ Advanced mode allows you to customize optimization parameters.\n"
+            "For most users, the default automatic settings work best.\n\n"
+            "💡 Tip: 6-neighborhood is recommended for accurate physical contact analysis."
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #a0a0a0; font-size: 9pt; padding: 10px;")
+        layout.addWidget(info_label)
+        
+        return group
+    
+    def toggle_advanced_settings(self):
+        """Toggle visibility of advanced settings section."""
+        is_visible = self.advanced_section.isVisible()
+        self.advanced_section.setVisible(not is_visible)
+        
+        # Update button text
+        if self.advanced_section.isVisible():
+            self.advanced_toggle_btn.setText("⚙️ Hide Advanced Settings")
+        else:
+            self.advanced_toggle_btn.setText("⚙️ Advanced Settings")
+    
+    def update_connectivity_description(self):
+        """Update connectivity description based on selected option."""
+        connectivity = self.connectivity_combo.currentData()
+        if connectivity == 6:
+            self.connectivity_desc_label.setText(
+                "🔷 Face contacts only (physical touching surfaces)\n"
+                "More accurate for real particle analysis"
+            )
+            self.connectivity_desc_label.setStyleSheet("color: #5cb85c; font-size: 10pt; padding: 8px;")
+        else:  # 26
+            self.connectivity_desc_label.setText(
+                "⬛ Face + Edge + Corner contacts (all 26 neighbors)\n"
+                "May overestimate contacts, useful for dense packing"
+            )
+            self.connectivity_desc_label.setStyleSheet("color: #5a9bd3; font-size: 10pt; padding: 8px;")
+    
     
     def connect_signals(self):
         """Connect UI signals to methods."""
@@ -203,8 +365,6 @@ class ParticleAnalysisGUI(QWidget):
         
         if folder:
             self.ct_folder_path = folder
-            self.folder_label.setText(f"📁 {folder}")
-            self.folder_label.setStyleSheet("")
             
             # Validate folder and count images (support multiple formats)
             from ..utils import get_image_files
@@ -212,18 +372,28 @@ class ParticleAnalysisGUI(QWidget):
             
             if len(image_files) > 0:
                 self.start_btn.setEnabled(True)
-                self.image_count_label.setStyleSheet("color: #5cb85c;")
                 
                 # Show file format info
                 formats_found = set(f.suffix.lower() for f in image_files)
                 format_text = ", ".join(formats_found)
-                self.image_count_label.setText(
-                    f"✅ Found {len(image_files)} images ({format_text}) for processing"
+                
+                # Update folder status label
+                folder_name = Path(folder).name
+                self.folder_status_label.setText(
+                    f"✅ Selected: {folder_name}\n"
+                    f"{len(image_files)} images ({format_text})"
                 )
+                self.folder_status_label.setStyleSheet("color: #5cb85c; font-weight: bold;")
+                
+                # Update status
+                self.status_label.setText(f"Ready - {len(image_files)} images loaded")
+                self.status_label.setStyleSheet("color: #5cb85c; font-weight: bold;")
             else:
                 self.start_btn.setEnabled(False)
-                self.image_count_label.setStyleSheet("color: #d9534f;")
-                self.image_count_label.setText("⚠️ No supported image files found (PNG, JPG, TIFF, BMP)")
+                self.folder_status_label.setText("⚠️ No supported image files found")
+                self.folder_status_label.setStyleSheet("color: #d9534f; font-weight: bold;")
+                self.status_label.setText("Error: No valid images found")
+                self.status_label.setStyleSheet("color: #d9534f; font-weight: bold;")
     
     def update_radius_preview(self):
         """Update radius range preview."""
@@ -273,10 +443,15 @@ class ParticleAnalysisGUI(QWidget):
             
             # Start optimization worker
             radii = list(range(1, self.max_radius_spinbox.value() + 1))
+            connectivity = self.connectivity_combo.currentData()  # Get selected connectivity (6 or 26)
+            
+            logger.info(f"Starting optimization with connectivity={connectivity}")
+            
             self.optimization_worker = OptimizationWorker(
                 vol_path=str(volume_path),
                 output_dir=str(self.output_dir),
-                radii=radii
+                radii=radii,
+                connectivity=connectivity
             )
             
             # Connect worker signals
@@ -376,15 +551,22 @@ class ParticleAnalysisGUI(QWidget):
         best_result = summary.get_result_by_radius(summary.best_radius)
         if best_result:
             best_metrics = final_metrics_data[summary.results.index(best_result)]
+            
+            # Get connectivity info
+            connectivity = self.connectivity_combo.currentData()
+            connectivity_name = "6-Neighborhood (Face)" if connectivity == 6 else "26-Neighborhood (Full)"
+            
             results_text = f"""🎯 OPTIMAL RADIUS: r = {summary.best_radius}
 
 📊 New Pareto+Distance Results:
 • Particles: {best_result.particle_count:,}
+• Mean Contacts: {best_result.mean_contacts:.1f}
 • HHI Dominance: {best_metrics['hhi']:.3f}
 • Knee Distance: {best_metrics['knee_dist']:.1f}
 • VI Stability: {best_metrics['vi_stability']:.3f}
 
-✅ Method: {summary.optimization_method}
+🔗 Contact Method: {connectivity_name}
+✅ Optimization: {summary.optimization_method}
 🔬 Explanation: Selected via Pareto optimality and distance minimization
 """
             self.final_results_text.setText(results_text)
