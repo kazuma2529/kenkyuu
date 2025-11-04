@@ -6,7 +6,7 @@ that are called from the main GUI window.
 
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Tuple
 
 import cv2
 import numpy as np
@@ -81,8 +81,62 @@ class PipelineHandler:
         logger.info(f"Processed {processed_count}/{total_files} CT images")
         return processed_count
     
+    def create_volume_from_3d_binarization(
+        self, 
+        ct_folder_path: str, 
+        progress_callback=None
+    ) -> Tuple[Path, Dict]:
+        """Create 3D volume using high-precision 3D Otsu binarization.
+        
+        This method implements M2 from APP_IMPLEMENTATION_PLAN.md:
+        - 3D Otsu on uint16 data (no downscaling)
+        - Automatic polarity detection
+        - Morphological post-processing
+        
+        Args:
+            ct_folder_path: Path to folder containing CT TIF images
+            progress_callback: Optional callback for progress updates
+            
+        Returns:
+            Tuple[Path, Dict]: (volume_path, info_dict) with binarization info
+            
+        Raises:
+            ValueError: If volume creation fails
+        """
+        from ..processing import load_and_binarize_3d_volume
+        
+        if progress_callback:
+            progress_callback("Loading images and performing 3D Otsu binarization...")
+        
+        volume_path = self.output_dir / "volume.npy"
+        
+        try:
+            # High-precision 3D binarization
+            binary_volume, info = load_and_binarize_3d_volume(
+                ct_folder_path,
+                min_object_size=100,  # Remove small noise
+                closing_radius=0,     # No closing by default (can be adjusted)
+                return_info=True
+            )
+            
+            # Save binary volume
+            np.save(str(volume_path), binary_volume)
+            
+            logger.info(f"Created 3D volume: {volume_path}")
+            logger.info(f"Volume shape: {binary_volume.shape}")
+            logger.info(f"Foreground ratio: {info['foreground_ratio']:.2%}")
+            logger.info(f"Polarity: {info['polarity']}")
+            
+            return volume_path, info
+            
+        except Exception as e:
+            logger.error(f"Failed to create 3D volume: {e}")
+            raise ValueError(f"Failed to create 3D volume: {e}")
+    
     def create_volume(self, progress_callback=None) -> Path:
         """Create 3D volume from processed masks.
+        
+        DEPRECATED: Use create_volume_from_3d_binarization() for better quality.
         
         Args:
             progress_callback: Optional callback for progress updates

@@ -358,7 +358,7 @@ class ParticleAnalysisGUI(QWidget):
         """Select CT images folder for complete processing."""
         folder = QFileDialog.getExistingDirectory(
             self, 
-            "Select CT Images Folder", 
+            "Select CT Images Folder (TIF/TIFF)", 
             "",
             QFileDialog.ShowDirsOnly
         )
@@ -366,9 +366,13 @@ class ParticleAnalysisGUI(QWidget):
         if folder:
             self.ct_folder_path = folder
             
-            # Validate folder and count images (support multiple formats)
+            # Validate folder and count images (TIF/TIFF only for 3D Otsu)
             from ..utils import get_image_files
-            image_files = get_image_files(Path(folder))
+            # Prioritize TIF/TIFF for high-precision 3D Otsu
+            image_files = get_image_files(
+                Path(folder), 
+                supported_formats=["*.tif", "*.tiff", "*.TIF", "*.TIFF"]
+            )
             
             if len(image_files) > 0:
                 self.start_btn.setEnabled(True)
@@ -381,19 +385,28 @@ class ParticleAnalysisGUI(QWidget):
                 folder_name = Path(folder).name
                 self.folder_status_label.setText(
                     f"✅ Selected: {folder_name}\n"
-                    f"{len(image_files)} images ({format_text})"
+                    f"{len(image_files)} TIF/TIFF images ({format_text})"
                 )
                 self.folder_status_label.setStyleSheet("color: #5cb85c; font-weight: bold;")
                 
                 # Update status
-                self.status_label.setText(f"Ready - {len(image_files)} images loaded")
+                self.status_label.setText(
+                    f"Ready - {len(image_files)} TIF images for 3D Otsu"
+                )
                 self.status_label.setStyleSheet("color: #5cb85c; font-weight: bold;")
+                
+                logger.info(f"Selected folder: {folder}")
+                logger.info(f"Found {len(image_files)} TIF/TIFF images")
             else:
                 self.start_btn.setEnabled(False)
-                self.folder_status_label.setText("⚠️ No supported image files found")
+                self.folder_status_label.setText(
+                    "⚠️ No TIF/TIFF images found\n"
+                    "3D Otsu requires TIF/TIFF format"
+                )
                 self.folder_status_label.setStyleSheet("color: #d9534f; font-weight: bold;")
-                self.status_label.setText("Error: No valid images found")
+                self.status_label.setText("Error: No TIF/TIFF images found")
                 self.status_label.setStyleSheet("color: #d9534f; font-weight: bold;")
+                logger.warning(f"No TIF/TIFF images found in {folder}")
     
     def update_radius_preview(self):
         """Update radius range preview."""
@@ -426,19 +439,31 @@ class ParticleAnalysisGUI(QWidget):
         self.progress_bar.setValue(0)
         self.status_label.setText("Starting analysis...")
         
-        # Process CT images through complete pipeline
+        # Process CT images through NEW high-precision 3D binarization pipeline
         try:
-            # Process CT images
-            processed_count = self.pipeline_handler.process_ct_images(
-                self.ct_folder_path,
+            # NEW: Direct 3D Otsu binarization (M2 implementation)
+            self.status_label.setText("Performing high-precision 3D Otsu binarization...")
+            logger.info("=" * 70)
+            logger.info("Starting NEW 3D binarization pipeline (M2)")
+            logger.info(f"CT folder: {self.ct_folder_path}")
+            logger.info("=" * 70)
+            
+            volume_path, binarization_info = self.pipeline_handler.create_volume_from_3d_binarization(
+                ct_folder_path=self.ct_folder_path,
                 progress_callback=self.status_label.setText
             )
             
-            self.status_label.setText(f"Processed {processed_count} CT images into masks...")
+            # Log binarization info
+            logger.info("Binarization completed successfully:")
+            logger.info(f"  - Images processed: {binarization_info['num_images']}")
+            logger.info(f"  - Volume shape: {binarization_info['volume_shape']}")
+            logger.info(f"  - Otsu threshold: {binarization_info['threshold']:.1f}")
+            logger.info(f"  - Polarity: {binarization_info['polarity']}")
+            logger.info(f"  - Foreground: {binarization_info['foreground_ratio']:.2%}")
             
-            # Create 3D volume
-            volume_path = self.pipeline_handler.create_volume(
-                progress_callback=self.status_label.setText
+            self.status_label.setText(
+                f"3D Otsu completed: {binarization_info['num_images']} images, "
+                f"{binarization_info['polarity']}"
             )
             
             # Start optimization worker
