@@ -48,10 +48,20 @@ def launch_gui():
         # Create QApplication if it doesn't exist
         from qtpy.QtWidgets import QApplication
         import sys
+        from pathlib import Path
         
         app = QApplication.instance()
         if app is None:
             app = QApplication(sys.argv)
+        
+        # Load and apply dark theme stylesheet
+        style_path = Path(__file__).parent / "style.qss"
+        if style_path.exists():
+            with open(style_path, 'r', encoding='utf-8') as f:
+                app.setStyleSheet(f.read())
+            logger.info("Dark theme stylesheet loaded successfully")
+        else:
+            logger.warning(f"Stylesheet not found at {style_path}")
         
         # Import and create main window
         from .main_window import ParticleAnalysisGUI

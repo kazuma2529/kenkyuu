@@ -85,13 +85,14 @@ class ParticleAnalysisGUI(QWidget):
         file_layout = QVBoxLayout(file_group)
         
         self.folder_label = QLabel("📁 No folder selected")
-        self.folder_label.setStyleSheet("color: gray; padding: 8px; border: 1px dashed gray; border-radius: 4px;")
+        self.folder_label.setObjectName("folderLabel")
         
         self.select_folder_btn = QPushButton("📁 Select CT Images Folder...")
+        self.select_folder_btn.setObjectName("selectFolderButton")
         self.select_folder_btn.setMinimumHeight(40)
         
         self.image_count_label = QLabel("")
-        self.image_count_label.setStyleSheet("font-weight: bold;")
+        self.image_count_label.setObjectName("imageCountLabel")
         
         file_layout.addWidget(self.folder_label)
         file_layout.addWidget(self.select_folder_btn)
@@ -108,7 +109,7 @@ class ParticleAnalysisGUI(QWidget):
         params_layout.addWidget(self.max_radius_spinbox, 0, 1)
         
         self.radius_preview_label = QLabel("")
-        self.radius_preview_label.setStyleSheet("color: blue; font-size: 11px;")
+        self.radius_preview_label.setStyleSheet("color: #5a9bd3; font-size: 11px;")
         params_layout.addWidget(self.radius_preview_label, 1, 0, 1, 2)
         
         # Execution Controls
@@ -116,45 +117,20 @@ class ParticleAnalysisGUI(QWidget):
         exec_layout = QVBoxLayout(exec_group)
         
         self.start_btn = QPushButton("🚀 Start Analysis (GO)")
+        self.start_btn.setObjectName("startButton")
         self.start_btn.setMinimumHeight(50)
         self.start_btn.setEnabled(False)
-        self.start_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                font-weight: bold;
-                border: none;
-                border-radius: 8px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
-            }
-        """)
         
         self.cancel_btn = QPushButton("❌ Cancel")
+        self.cancel_btn.setObjectName("cancelButton")
         self.cancel_btn.setEnabled(False)
-        self.cancel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f44336;
-                color: white;
-                font-weight: bold;
-                border: none;
-                border-radius: 8px;
-            }
-            QPushButton:hover {
-                background-color: #da190b;
-            }
-        """)
         
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         
         self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: green; font-weight: bold;")
+        self.status_label.setObjectName("statusLabel")
+        self.status_label.setStyleSheet("color: #5cb85c;")
         
         exec_layout.addWidget(self.start_btn)
         exec_layout.addWidget(self.cancel_btn)
@@ -166,37 +142,14 @@ class ParticleAnalysisGUI(QWidget):
         results_layout = QVBoxLayout(results_group)
         
         self.final_results_text = QTextEdit()
+        self.final_results_text.setObjectName("finalResultsText")
         self.final_results_text.setMaximumHeight(150)
         self.final_results_text.setReadOnly(True)
-        self.final_results_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #f0f8ff;
-                border: 2px solid #4CAF50;
-                border-radius: 8px;
-                padding: 8px;
-                font-family: monospace;
-            }
-        """)
         
         self.view_3d_btn = QPushButton("🔍 View 3D Results")
+        self.view_3d_btn.setObjectName("view3dButton")
         self.view_3d_btn.setEnabled(False)
         self.view_3d_btn.setMinimumHeight(40)
-        self.view_3d_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2196F3;
-                color: white;
-                font-weight: bold;
-                border: none;
-                border-radius: 8px;
-            }
-            QPushButton:hover {
-                background-color: #1976D2;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
-            }
-        """)
         
         results_layout.addWidget(self.final_results_text)
         results_layout.addWidget(self.view_3d_btn)
@@ -251,7 +204,7 @@ class ParticleAnalysisGUI(QWidget):
         if folder:
             self.ct_folder_path = folder
             self.folder_label.setText(f"📁 {folder}")
-            self.folder_label.setStyleSheet("color: black;")
+            self.folder_label.setStyleSheet("")
             
             # Validate folder and count images (support multiple formats)
             from ..utils import get_image_files
@@ -259,7 +212,7 @@ class ParticleAnalysisGUI(QWidget):
             
             if len(image_files) > 0:
                 self.start_btn.setEnabled(True)
-                self.image_count_label.setStyleSheet("color: green;")
+                self.image_count_label.setStyleSheet("color: #5cb85c;")
                 
                 # Show file format info
                 formats_found = set(f.suffix.lower() for f in image_files)
@@ -269,7 +222,7 @@ class ParticleAnalysisGUI(QWidget):
                 )
             else:
                 self.start_btn.setEnabled(False)
-                self.image_count_label.setStyleSheet("color: red;")
+                self.image_count_label.setStyleSheet("color: #d9534f;")
                 self.image_count_label.setText("⚠️ No supported image files found (PNG, JPG, TIFF, BMP)")
     
     def update_radius_preview(self):
