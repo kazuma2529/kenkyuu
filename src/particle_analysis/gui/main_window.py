@@ -28,13 +28,17 @@ from .workers import OptimizationWorker
 from .widgets import ResultsTable, ResultsPlotter
 from .launcher import _ensure_gui_available
 from .pipeline_handler import PipelineHandler
+from .config import (
+    WINDOW_TITLE, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT,
+    WINDOW_DEFAULT_WIDTH, WINDOW_DEFAULT_HEIGHT,
+    DEFAULT_MAX_RADIUS, SUPPORTED_TIF_FORMATS,
+    OUTPUT_CSV_NAME, OUTPUT_BEST_LABELS_NAME,
+    CONNECTIVITY_NAMES
+)
+from .metrics_calculator import MetricsCalculator
+from .napari_integration import NapariViewerManager, NAPARI_AVAILABLE
 
 logger = logging.getLogger(__name__)
-
-try:
-    import napari
-except ImportError:
-    napari = None
 
 
 class ParticleAnalysisGUI(QWidget):
@@ -48,16 +52,16 @@ class ParticleAnalysisGUI(QWidget):
         self.output_dir = ""
         self.optimization_worker = None
         self.optimization_summary = None
-        self.napari_viewer = None
         self.pipeline_handler = None
+        self.napari_manager = NapariViewerManager()
         
         self.setup_ui()
         self.connect_signals()
         
         # Set window properties
-        self.setWindowTitle("3D Particle Analysis Pipeline")
-        self.setMinimumSize(1400, 900)
-        self.resize(1600, 1000)
+        self.setWindowTitle(WINDOW_TITLE)
+        self.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
+        self.resize(WINDOW_DEFAULT_WIDTH, WINDOW_DEFAULT_HEIGHT)
     
     def setup_ui(self):
         """Setup the main user interface with simplified UX."""
@@ -79,7 +83,7 @@ class ParticleAnalysisGUI(QWidget):
         main_layout.addWidget(self.advanced_section)
         
         # Initialize default values
-        self.max_radius_spinbox.setValue(10)
+        self.max_radius_spinbox.setValue(DEFAULT_MAX_RADIUS)
         self.update_radius_preview()
     
     def create_simple_controls(self):
@@ -371,7 +375,7 @@ class ParticleAnalysisGUI(QWidget):
             # Prioritize TIF/TIFF for high-precision 3D Otsu
             image_files = get_image_files(
                 Path(folder), 
-                supported_formats=["*.tif", "*.tiff", "*.TIF", "*.TIFF"]
+                supported_formats=SUPPORTED_TIF_FORMATS
             )
             
             if len(image_files) > 0:
@@ -570,35 +574,10 @@ class ParticleAnalysisGUI(QWidget):
     
     def _calculate_current_metrics(self, result):
         """Calculate metrics for real-time display during optimization."""
-        from ..volume.metrics import calculate_hhi
-        from ..volume.optimization.utils import detect_knee_point
-        
-        # Calculate HHI
-        hhi = 0.0
-        if hasattr(result, 'labels_path') and result.labels_path:
-            try:
-                labels = np.load(result.labels_path)
-                hhi = calculate_hhi(labels)
-            except:
-                hhi = result.largest_particle_ratio
-        
-        # Calculate knee distance if enough data
-        knee_dist = 0.0
-        if hasattr(self, 'temp_results') and len(self.temp_results) >= 2:
-            all_results = self.temp_results + [result]
-            radii = [r.radius for r in all_results]
-            counts = [r.particle_count for r in all_results]
-            try:
-                knee_idx = detect_knee_point(radii, counts)
-                knee_dist = abs(result.radius - radii[knee_idx])
-            except:
-                pass
-        
-        return {
-            'hhi': hhi,
-            'knee_dist': knee_dist, 
-            'vi_stability': 0.5  # Placeholder for real-time display
-        }
+        return MetricsCalculator.calculate_current_metrics(
+            result,
+            getattr(self, 'temp_results', None)
+        )
     
     def on_optimization_complete(self, summary):
         """Handle optimization completion."""
@@ -622,7 +601,7 @@ class ParticleAnalysisGUI(QWidget):
             
             # Get connectivity info
             connectivity = self.connectivity_combo.currentData()
-            connectivity_name = "6-Neighborhood (Face)" if connectivity == 6 else "26-Neighborhood (Full)"
+            connectivity_name = CONNECTIVITY_NAMES.get(connectivity, f"{connectivity}-Neighborhood")
             
             # Get output directory info
             csv_path = self.output_dir / "optimization_results.csv"
@@ -705,34 +684,6 @@ class ParticleAnalysisGUI(QWidget):
             'vi_stability': vi_stability
         }
     
-    def _calculate_vi_for_result(self, result, all_results):
-        """Calculate VI stability for a single result."""
-        from ..volume.metrics import calculate_variation_of_information
-        
-        # Find current index
-        try:
-            current_idx = next(i for i, r in enumerate(all_results) if r.radius == result.radius)
-        except StopIteration:
-            return 0.5
-        
-        # First result has no previous comparison
-        if current_idx == 0:
-            return 0.5
-        
-        # Check if both current and previous have labels
-        prev_result = all_results[current_idx - 1]
-        if not (hasattr(result, 'labels_path') and result.labels_path and 
-                hasattr(prev_result, 'labels_path') and prev_result.labels_path):
-            return 0.5
-        
-        # Calculate VI
-        try:
-            labels_curr = np.load(result.labels_path)
-            labels_prev = np.load(prev_result.labels_path)
-            return calculate_variation_of_information(labels_prev, labels_curr)
-        except Exception as e:
-            logger.warning(f"Failed to calculate VI for r={result.radius}: {e}")
-            return 0.5
     
     def on_error_occurred(self, error_msg):
         """Handle errors from optimization worker."""

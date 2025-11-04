@@ -236,53 +236,12 @@ class ResultsPlotter(QWidget):
     
     def _calculate_new_metrics(self, results_data: List) -> List[Dict]:
         """Calculate metrics for plot visualization."""
-        from ..volume.metrics import calculate_hhi, calculate_variation_of_information
-        from ..volume.optimization.utils import detect_knee_point
+        from .metrics_calculator import MetricsCalculator
         
         try:
-            radii = [r.radius for r in results_data]
-            particle_counts = [r.particle_count for r in results_data]
-            
-            # Detect knee point
-            knee_idx = detect_knee_point(radii, particle_counts) if len(radii) >= 3 else 0
-            knee_radius = radii[knee_idx]
-            
-            metrics_list = []
-            for i, result in enumerate(results_data):
-                # HHI
-                hhi = 0.0
-                if hasattr(result, 'labels_path') and result.labels_path:
-                    try:
-                        labels = np.load(result.labels_path)
-                        hhi = calculate_hhi(labels)
-                    except:
-                        hhi = result.largest_particle_ratio
-                
-                # Knee distance
-                knee_dist = abs(result.radius - knee_radius)
-                
-                # VI stability
-                vi_stability = 0.5
-                if i > 0 and hasattr(result, 'labels_path') and result.labels_path:
-                    prev_result = results_data[i-1]
-                    if hasattr(prev_result, 'labels_path') and prev_result.labels_path:
-                        try:
-                            current_labels = np.load(result.labels_path)
-                            prev_labels = np.load(prev_result.labels_path)
-                            vi_stability = calculate_variation_of_information(prev_labels, current_labels)
-                        except:
-                            pass
-                
-                metrics_list.append({
-                    'hhi': hhi,
-                    'knee_dist': knee_dist,
-                    'vi_stability': vi_stability
-                })
-            
-            return metrics_list
-            
+            return MetricsCalculator.calculate_metrics_for_plots(results_data)
         except Exception as e:
             logger.warning(f"Failed to calculate plot metrics: {e}")
-            return [{'hhi': 0.0, 'knee_dist': 0.0, 'vi_stability': 0.0} for _ in results_data]
+            return [{'hhi': 0.0, 'knee_dist': 0.0, 'vi': 0.0} for _ in results_data]
 
 __all__ = ["ResultsTable", "ResultsPlotter"] 
