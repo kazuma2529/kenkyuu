@@ -435,7 +435,7 @@ class ParticleAnalysisGUI(QWidget):
         self.start_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0, self.max_radius_spinbox.value())
+        self.progress_bar.setRange(0, 100)  # Use percentage (0-100)
         self.progress_bar.setValue(0)
         self.status_label.setText("Starting analysis...")
         
@@ -484,6 +484,11 @@ class ParticleAnalysisGUI(QWidget):
             self.optimization_worker.optimization_complete.connect(self.on_optimization_complete)
             self.optimization_worker.error_occurred.connect(self.on_error_occurred)
             
+            # NEW: Connect detailed progress signals
+            self.optimization_worker.progress_text_updated.connect(self.update_status_text)
+            self.optimization_worker.progress_percentage_updated.connect(self.update_progress_bar)
+            self.optimization_worker.stage_changed.connect(self.update_stage_indicator)
+            
             # Start worker
             self.optimization_worker.start()
             
@@ -502,20 +507,17 @@ class ParticleAnalysisGUI(QWidget):
         self.reset_ui_after_analysis()
     
     def on_progress_updated(self, result):
-        """Handle progress updates from optimization worker."""
-        # Update progress bar
-        self.progress_bar.setValue(result.radius)
+        """Handle progress updates from optimization worker.
         
-        # Update status
-        self.status_label.setText(f"Testing radius {result.radius}: {result.particle_count} particles")
-        
+        This receives OptimizationResult objects and updates the real-time table and graphs.
+        """
         # Calculate new metrics for display
         new_metrics = self._calculate_current_metrics(result)
         
-        # Add to table
+        # Add to table (リアルタイムテーブル更新)
         self.results_table.add_result(result, new_metrics)
         
-        # Update plots
+        # Update plots (グラフ更新)
         if hasattr(self, 'temp_results'):
             self.temp_results.append(result)
             self.temp_metrics.append(new_metrics)
@@ -524,6 +526,47 @@ class ParticleAnalysisGUI(QWidget):
             self.temp_metrics = [new_metrics]
         
         self.results_plotter.update_plots(self.temp_results, new_metrics_data=self.temp_metrics)
+        
+        logger.info(
+            f"Table updated: r={result.radius}, particles={result.particle_count}, "
+            f"contacts={result.mean_contacts:.1f}"
+        )
+    
+    def update_status_text(self, text: str):
+        """Update status label with progress text.
+        
+        Args:
+            text: Progress text (e.g., "r = 3: 1234 particles, 6.2 avg contacts")
+        """
+        self.status_label.setText(text)
+        self.status_label.setStyleSheet("color: #5a9bd3; font-weight: bold;")
+    
+    def update_progress_bar(self, percentage: int):
+        """Update progress bar value.
+        
+        Args:
+            percentage: Progress percentage (0-100)
+        """
+        self.progress_bar.setValue(percentage)
+        logger.debug(f"Progress bar updated: {percentage}%")
+    
+    def update_stage_indicator(self, stage: str):
+        """Update processing stage indicator.
+        
+        Args:
+            stage: Current stage (e.g., "initialization", "optimization", "finalization")
+        """
+        stage_text_map = {
+            "initialization": "🔄 初期化中...",
+            "optimization": "⚙️ 最適化実行中...",
+            "finalization": "🎯 最適r選定中...",
+        }
+        
+        display_text = stage_text_map.get(stage, f"処理中: {stage}")
+        logger.info(f"Stage changed: {display_text}")
+        
+        # Optionally update a stage label if you have one
+        # self.stage_label.setText(display_text)
     
     def _calculate_current_metrics(self, result):
         """Calculate metrics for real-time display during optimization."""
@@ -581,9 +624,13 @@ class ParticleAnalysisGUI(QWidget):
             connectivity = self.connectivity_combo.currentData()
             connectivity_name = "6-Neighborhood (Face)" if connectivity == 6 else "26-Neighborhood (Full)"
             
+            # Get output directory info
+            csv_path = self.output_dir / "optimization_results.csv"
+            csv_exists = "✅" if csv_path.exists() else "❌"
+            
             results_text = f"""🎯 OPTIMAL RADIUS: r = {summary.best_radius}
 
-📊 New Pareto+Distance Results:
+📊 Pareto+Distance Results:
 • Particles: {best_result.particle_count:,}
 • Mean Contacts: {best_result.mean_contacts:.1f}
 • HHI Dominance: {best_metrics['hhi']:.3f}
@@ -593,6 +640,14 @@ class ParticleAnalysisGUI(QWidget):
 🔗 Contact Method: {connectivity_name}
 ✅ Optimization: {summary.optimization_method}
 🔬 Explanation: Selected via Pareto optimality and distance minimization
+
+📁 Saved Results:
+{csv_exists} CSV: optimization_results.csv
+{csv_exists} Summary: optimization_summary.txt
+{csv_exists} Best Labels: best_labels.npy
+📂 Location: {self.output_dir}
+
+💡 Click "🔍 View 3D Results" to visualize in Napari
 """
             self.final_results_text.setText(results_text)
         
@@ -697,13 +752,130 @@ class ParticleAnalysisGUI(QWidget):
         # Optional: Could trigger 3D view updates based on selected radius
         pass
     
+    def load_best_labels_in_napari(self, best_labels_path: Path):
+        """Load the best optimization result in Napari viewer.
+        
+        Args:
+            best_labels_path: Path to best_labels.npy file
+        """
+        try:
+            if napari is None:
+                QMessageBox.warning(
+                    self, 
+                    "Napari Not Available", 
+                    "Napari is not installed.\n\n"
+                    "Install it with:\n"
+                    "pip install napari[all]"
+                )
+                return
+            
+            # Load data
+            volume_path = self.output_dir / "volume.npy"
+            best_labels = np.load(best_labels_path)
+            
+            best_r = self.optimization_summary.best_radius
+            best_result = self.optimization_summary.get_result_by_radius(best_r)
+            
+            logger.info(f"Opening Napari with best result (r={best_r})")
+            logger.info(f"Labels shape: {best_labels.shape}")
+            logger.info(f"Unique particles: {best_labels.max()}")
+            
+            # Check if viewer exists and is still valid
+            viewer_needs_creation = True
+            if self.napari_viewer is not None:
+                try:
+                    _ = self.napari_viewer.layers
+                    viewer_needs_creation = False
+                    # Clear existing layers
+                    self.napari_viewer.layers.clear()
+                except (RuntimeError, AttributeError):
+                    self.napari_viewer = None
+                    viewer_needs_creation = True
+            
+            # Create new viewer if needed
+            if viewer_needs_creation:
+                title = f"3D Particle Analysis - Best Result (r={best_r})"
+                self.napari_viewer = napari.Viewer(title=title)
+                
+                # Setup cleanup on close
+                original_close = self.napari_viewer.close
+                def close_with_cleanup():
+                    self.napari_viewer = None
+                    original_close()
+                self.napari_viewer.close = close_with_cleanup
+            
+            # Load volume if available (as background)
+            if volume_path.exists():
+                volume = np.load(volume_path)
+                self.napari_viewer.add_image(
+                    volume, 
+                    name="Binary Volume", 
+                    rendering="mip",
+                    opacity=0.3,
+                    colormap="gray"
+                )
+            
+            # Load best labels (main layer)
+            self.napari_viewer.add_labels(
+                best_labels, 
+                name=f"Optimized Particles (r={best_r})",
+                opacity=0.8
+            )
+            
+            # Add metadata as text overlay
+            if best_result:
+                metadata_text = (
+                    f"Best Radius: {best_r}\n"
+                    f"Particles: {best_result.particle_count}\n"
+                    f"Mean Contacts: {best_result.mean_contacts:.1f}\n"
+                    f"Largest Ratio: {best_result.largest_particle_ratio:.2%}"
+                )
+                logger.info(f"Best result metadata:\n{metadata_text}")
+            
+            # Set optimal view
+            self.napari_viewer.dims.ndisplay = 3  # 3D mode
+            self.napari_viewer.camera.angles = (45, 45, 45)  # Nice viewing angle
+            
+            # Show viewer window
+            self.napari_viewer.window.show()
+            
+            logger.info("✅ Napari viewer opened successfully")
+            
+        except FileNotFoundError as e:
+            QMessageBox.warning(
+                self, 
+                "File Not Found", 
+                f"Required file not found:\n{e}"
+            )
+            logger.error(f"File not found: {e}")
+        except Exception as e:
+            QMessageBox.critical(
+                self, 
+                "Napari Error", 
+                f"Failed to open 3D viewer:\n\n{str(e)}"
+            )
+            logger.error(f"Napari error: {e}")
+            import traceback
+            traceback.print_exc()
+    
     def view_3d_results(self):
-        """Open 3D viewer with all radius results."""
+        """Open 3D viewer with best optimization result.
+        
+        Shows the best_labels.npy file in Napari for visual inspection.
+        Also loads the original volume for context.
+        """
         if not self.optimization_summary:
             QMessageBox.warning(self, "Warning", "No analysis results available.")
             return
         
-        self.load_3d_results()  # Load all radii, not specific one
+        # Try to load best labels first
+        best_labels_path = self.output_dir / "best_labels.npy"
+        if best_labels_path.exists():
+            self.load_best_labels_in_napari(best_labels_path)
+        else:
+            # Fallback to loading all radii
+            logger.warning("best_labels.npy not found, loading all radii instead")
+            self.load_3d_results()  # Load all radii as fallback
     
     def load_3d_results(self, radius: int = None):
         """Load 3D results for specific radius or all radii."""
