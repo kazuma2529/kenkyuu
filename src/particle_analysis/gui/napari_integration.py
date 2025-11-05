@@ -69,14 +69,9 @@ class NapariViewerManager:
         
         self.viewer = napari.Viewer(title=title)
         
-        # Setup cleanup on close
-        original_close = self.viewer.close
-        
-        def close_with_cleanup():
-            self.viewer = None
-            original_close()
-        
-        self.viewer.close = close_with_cleanup
+        # Note: Napari Viewer is a Pydantic model, so we can't set attributes directly
+        # The viewer reference will be cleared automatically when is_viewer_valid() 
+        # detects it's no longer valid (checked via viewer.layers access)
         
         return self.viewer
     
