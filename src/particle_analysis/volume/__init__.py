@@ -9,7 +9,7 @@ This package handles 3D volume operations including:
 
 # Import from modular components
 from .data_structures import OptimizationResult, OptimizationSummary
-from .core import stack_masks, split_particles, label_volume
+from .core import split_particles, label_volume
 from .optimizer import optimize_radius_advanced, optimize_radius
 
 # Import from reorganized metrics package
@@ -40,7 +40,6 @@ from .optimization import (
 
 __all__ = [
     # Core volume operations
-    "stack_masks",
     "split_particles", 
     "label_volume",
     

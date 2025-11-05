@@ -38,7 +38,7 @@ class PostprocessConfig:
 @dataclass
 class LabelingConfig:
     """Configuration for 3D labeling."""
-    connectivity: int = 6  # Default connectivity (6, 18, or 26)
+    connectivity: int = 6  # Default connectivity (6 or 26)
     expected_slices: int = 196  # Expected number of CT slices
 
 
@@ -61,7 +61,7 @@ class SplittingConfig:
     Dataset: Flan casting sand CT (196 slices, 512x512 resolution)
     """
     erosion_radius: int = 5  # OPTIMIZED: Best balance of splitting vs particle count
-    connectivity: int = 6  # Connectivity for labeling (6=face, 18=edge, 26=vertex)
+    connectivity: int = 6  # Connectivity for labeling (6=face, 26=full)
     min_particles: int = 100  # Minimum expected particles (warning threshold)
     max_particles: int = 5000  # Maximum expected particles (warning threshold)
     default_radius_range: tuple = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)  # Default range for GUI

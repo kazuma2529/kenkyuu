@@ -21,11 +21,10 @@ class TestPackageImports(unittest.TestCase):
             self.fail(f"Failed to import main package: {e}")
 
     def test_processing_imports(self):
-        """Test processing module imports."""
+        """Test processing module imports (GUI-only path)."""
         try:
-            from particle_analysis.processing import clean_mask, process_masks
-            self.assertTrue(callable(clean_mask))
-            self.assertTrue(callable(process_masks))
+            from particle_analysis.processing import load_and_binarize_3d_volume
+            self.assertTrue(callable(load_and_binarize_3d_volume))
         except ImportError as e:
             self.fail(f"Failed to import processing functions: {e}")
 
@@ -33,10 +32,9 @@ class TestPackageImports(unittest.TestCase):
         """Test volume module imports."""
         try:
             from particle_analysis.volume import (
-                stack_masks, split_particles, optimize_radius_advanced,
+                split_particles, optimize_radius_advanced,
                 OptimizationResult, OptimizationSummary
             )
-            self.assertTrue(callable(stack_masks))
             self.assertTrue(callable(split_particles))
             self.assertTrue(callable(optimize_radius_advanced))
         except ImportError as e:

@@ -11,9 +11,9 @@ This package contains the core functionality for 3D particle analysis:
 __version__ = "2.0.0"
 __author__ = "3D Particle Analysis Team"
 
-from .processing import clean_mask, process_masks
+from .processing import load_and_binarize_3d_volume
 from .volume import (
-    stack_masks, split_particles, label_volume,
+    split_particles, label_volume,
     optimize_radius, optimize_radius_advanced,
     OptimizationResult, OptimizationSummary,
     calculate_particle_volumes, calculate_largest_particle_ratio,
@@ -39,11 +39,9 @@ except ImportError:
 
 __all__ = [
     # Processing
-    "clean_mask",
-    "process_masks",
+    "load_and_binarize_3d_volume",
     
     # Volume operations
-    "stack_masks", 
     "split_particles",
     "label_volume",
     

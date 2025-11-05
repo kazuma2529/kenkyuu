@@ -22,7 +22,7 @@ def count_contacts(labels: np.ndarray, connectivity: int = 26) -> Dict[int, int]
     
     Args:
         labels: 3D labeled volume (particle IDs)
-        connectivity: Neighborhood connectivity (6, 18, or 26)
+        connectivity: Neighborhood connectivity (6 or 26)
     
     Returns:
         Dict mapping particle_id -> contact_count
@@ -30,15 +30,7 @@ def count_contacts(labels: np.ndarray, connectivity: int = 26) -> Dict[int, int]
     if connectivity == 6:
         # Face-connected neighbors (6 directions)
         offsets = [(-1,0,0), (1,0,0), (0,-1,0), (0,1,0), (0,0,-1), (0,0,1)]
-    elif connectivity == 18:
-        # Face + edge connected (18 directions)
-        offsets = []
-        for dz in [-1, 0, 1]:
-            for dy in [-1, 0, 1]:
-                for dx in [-1, 0, 1]:
-                    if abs(dx) + abs(dy) + abs(dz) <= 2 and (dx, dy, dz) != (0, 0, 0):
-                        offsets.append((dz, dy, dx))
-    else:  # connectivity == 26
+    elif connectivity == 26:
         # Full 26-connected neighborhood
         offsets = []
         for dz in [-1, 0, 1]:
@@ -46,6 +38,8 @@ def count_contacts(labels: np.ndarray, connectivity: int = 26) -> Dict[int, int]
                 for dx in [-1, 0, 1]:
                     if (dx, dy, dz) != (0, 0, 0):
                         offsets.append((dz, dy, dx))
+    else:
+        raise ValueError(f"Unsupported connectivity: {connectivity}. Use 6 or 26.")
     
     Z, H, W = labels.shape
     max_label = labels.max()

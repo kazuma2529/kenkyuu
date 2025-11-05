@@ -14,7 +14,7 @@ postprocess:
 
 # 3D labeling settings
 labeling:
-  connectivity: 6 # Connectivity (6=face, 18=edge, 26=vertex)
+  connectivity: 6 # Connectivity (6=face, 26=full)
   expected_slices: 196 # Expected number of CT slices
 
 # Particle splitting settings (OPTIMIZED)
