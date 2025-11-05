@@ -1,10 +1,9 @@
 # 3D Particle Analysis Pipeline
 
-**CT スライス画像から 3D 粒子構造を自動解析するシステム**
+**CT スライス画像から 3D 粒子構造を自動解析する GUI ツール（現行実装ベース）**
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-9%2F9%20passing-green.svg)](tests/)
 [![GUI](https://img.shields.io/badge/GUI-Available-blue.svg)](src/particle_analysis/gui/)
 
 ---
@@ -12,498 +11,182 @@
 ## 📖 目次
 
 1. [このシステムは何をするのか](#目的)
-2. [システムの構造](#システムの構造)
-3. [処理の流れ](#処理の流れ)
-4. [起動方法](#起動方法)
-5. [出力ファイル](#出力ファイル)
-6. [sakai_code との関係](#sakai_codeとの関係)
-7. [技術的な詳細](#技術的な詳細)
+2. [リポジトリの取得と起動](#リポジトリの取得と起動)
+3. [フォルダ構成（現行）](#フォルダ構成現行)
+4. [処理の流れ（現行実装）](#処理の流れ現行実装)
+5. [出力ファイル（現行仕様）](#出力ファイル現行仕様)
+6. [トラブルシューティング](#トラブルシューティング)
 
 ---
 
 ## 🎯 目的
 
-このシステムは、**CT スキャンで撮影した複数のスライス画像から、3D 空間内の粒子（砂粒など）を自動的に検出・分割し、粒子間の接触数を解析**するためのツールです。
-
-### 何ができるのか？
-
-- 📸 **CT 画像の自動処理**: 複数の 2D スライス画像を読み込み、粒子領域を自動検出
-- 🏗️ **3D 構造の再構築**: 2D 画像を積み重ねて 3D ボリュームデータを作成
-- ✂️ **接触粒子の分離**: くっついている粒子を自動的に分離して個別に識別
-- 🔗 **接触解析**: 各粒子が何個の粒子と接触しているかを計算
-- 📊 **統計分析**: 粒子数、接触数、体積などの統計情報を出力
-- 🎯 **最適パラメータの自動決定**: 最良の分割結果を得るためのパラメータを自動選択
-
-### なぜこれが必要なのか？
-
-材料科学や地質学の研究では、粒子の集合体（砂、コンクリート、粉末など）の物性を理解するために、粒子間の接触数や分布を調べることが重要です。このシステムを使えば、手作業で数える必要がなく、自動的に正確な解析ができます。
+このシステムは、**CT スキャンで撮影した複数の TIF/TIFF スライス画像から、3D 空間内の粒子（砂粒など）を高精度に二値化・分割し、接触数の傾向を評価しつつ最適な分割半径 r を自動決定**するためのツールです。GUI からマウス操作のみで実行できます。
 
 ---
 
-## 🏗️ システムの構造
+## 🚀 リポジトリの取得と起動
 
-プロジェクトのフォルダ構造と、各ファイル・フォルダの役割を説明します。
-
-```
-kenkyuu/
-│
-├── 📖 README.md                    # このファイル（説明書）
-├── 📦 requirements.txt             # 必要なライブラリのリスト
-│
-├── ⚙️ config/                       # 設定ファイル
-│   └── optimized_sand_particles.yaml  # 最適化済みパラメータ設定例
-│
-├── 📁 data/                         # 入力データ用フォルダ
-│   └── images/                     # CT スライス画像を置く場所
-│       └── tif/                    # TIF 画像フォルダ（例: CT001.tif, CT002.tif, ...）
-│
-├── 🛠️ scripts/                      # 実行用スクリプト
-│   ├── run_gui.py                  # GUI 版を起動する
-│   ├── run_pipeline.py             # コマンドライン版を実行する
-│   ├── view_volume.py              # 3D 可視化ツール
-│   └── check_file_count.py         # ファイル数チェック用ユーティリティ
-│
-├── 🧠 src/particle_analysis/       # メインのプログラムコード
-│   │
-│   ├── 📸 processing.py            # 画像の前処理（二値化など）
-│   │
-│   ├── 🏗️ volume/                  # 3D ボリューム処理
-│   │   ├── core.py                 # 基本的な 3D 操作（スタック、分割）
-│   │   ├── optimizer.py            # 最適パラメータの自動決定
-│   │   ├── data_structures.py     # データ構造の定義
-│   │   ├── metrics/                # 評価指標の計算
-│   │   │   ├── basic.py            # 基本指標（体積、サイズ）
-│   │   │   ├── dominance.py       # 支配性指標（HHI、ジニ係数）
-│   │   │   └── stability.py       # 安定性指標（VI、Dice係数）
-│   │   └── optimization/          # 最適化アルゴリズム
-│   │       ├── utils.py            # ユーティリティ（膝点検出など）
-│   │       └── algorithms.py      # Pareto 最適化アルゴリズム
-│   │
-│   ├── 🔗 contact/                 # 接触解析
-│   │   └── core.py                 # 粒子間の接触数を計算
-│   │
-│   ├── 🖥️ gui/                      # グラフィカルユーザーインターフェース
-│   │   ├── main_window.py          # メインウィンドウ
-│   │   ├── pipeline_handler.py    # 処理の制御
-│   │   ├── workers.py              # バックグラウンド処理
-│   │   ├── widgets.py              # UI コンポーネント
-│   │   ├── ui_components.py        # UI コンポーネント（詳細）
-│   │   ├── metrics_calculator.py  # メトリクス計算
-│   │   ├── napari_integration.py   # Napari 3D 可視化連携
-│   │   ├── launcher.py             # GUI 起動管理
-│   │   ├── config.py               # GUI 設定
-│   │   └── style.qss               # GUI スタイルシート
-│   │
-│   ├── 🛠️ utils/                    # 便利な機能
-│   │   ├── common.py               # ログ、タイマー
-│   │   └── file_utils.py           # ファイル処理
-│   │
-│   ├── ⚙️ config.py                # 設定の管理（YAML 対応）
-│   └── 👁️ visualize.py             # 3D 可視化
-│
-├── 🧪 tests/                        # テストコード
-│   └── test_package_imports.py     # インポートテスト
-│
-├── 📚 docs/                         # ドキュメント
-│   └── OPTIMIZATION_HISTORY.md     # 最適化の履歴
-│
-└── 📊 output/                       # 解析結果の出力先
-    └── run_YYYY_MM_DD_HHMM/        # 実行日時ごとのフォルダ
-        ├── volume.npy               # 3D ボリュームデータ
-        ├── labels_r*.npy           # ラベル付き粒子データ
-        ├── optimization_results.csv # 最適化結果
-        └── contact_analysis.csv     # 接触解析結果
-```
-
----
-
-## 🔄 処理の流れ
-
-システムは以下の **5 つのステップ**で処理を行います。CLI と GUI で若干の違いがありますが、基本的な処理の流れは同じです。
-
-### ステップ 1: 📸 高精度 3D 二値化（GUI 専用）
-
-**目的**: CT スライス画像（TIF 推奨）から、粒子領域の 3D 二値化ボリュームを直接作成する
-
-**処理内容**:
-
-1. **3D ボリューム読み込み**: 全スライスを uint16 のまま読み込み（精度維持）
-2. **2 段階 Otsu 二値化**:
-   - 第 1 段階: 全体に対して Otsu を適用して背景と前景を分離
-   - 第 2 段階: 前景領域に対して再度 Otsu を適用して粒子を精緻化
-3. **自動極性検出**: 粒子が明るいか暗いかを自動判定
-4. **形態学的後処理**: 小物体除去とクロージング
-
-**実装**: `processing.py` の `load_and_binarize_3d_volume()` 関数
-
-**入力**: CT スライス画像フォルダ（TIF 形式推奨）
-
-**出力**: 3D ボリューム（`volume.npy`）
-
-### ステップ 2: ✂️ 粒子分割
-
-**目的**: くっついている粒子を分離して個別に識別する
-
-**処理内容**:
-
-1. **エローション（侵食）**: 粒子を内側に向かって球状構造要素（半径 `r`）で削る
-2. **種（シード）の作成**: 削った後の連結成分をラベリングして、各粒子の「種」を決定
-3. **距離変換**: 元のボリュームに対してユークリッド距離変換（EDT）を計算
-4. **ウォーターシェッド（分水嶺）**: 種を起点として、元の境界まで拡張して粒子を分離
-5. **ラベリング**: 各粒子に連番 ID（1, 2, 3, ...）を付ける
-
-**実装**: `volume/core.py` の `split_particles()` 関数
-
-**入力**: `volume.npy`  
-**出力**: `labels_r*.npy`（ラベル付き粒子データ、`*` は半径 `r` の値）
-
-**注意**: 半径 `r` が大きいほど、より多くの粒子に分割されます。`r=1` は粗い分割、`r=10` は細かい分割になります。
-
-### ステップ 2.5: 🎯 最適パラメータの自動決定（GUI）
-
-**目的**: 多目的最適化を用いず、最小ルールで「未分割排除・過分割抑制・物理整合」を同時に満たす半径 `r` を自動選択します。
-
-**決定規則（2 段＋物理チェック）**
-
-1. 未分割の排除（ハード制約）
-
-- 最小 `r` から走査し、`largest_particle_ratio(r) ≤ τratio` を初めて満たす `r` を `r*` とする。
-- 既定値: `τratio = 0.05`
-
-2. 限界効用＋物理レンジ（`r ≥ r*`）
-
-- `Δcount(r) = particle_count(r) − particle_count(r−1)`
-- `Δcount(r) ≤ τgain` かつ `mean_contacts(r) ∈ [cmin, cmax]` を同時に初めて満たす `r` を採択。
-- 既定値: `τgain = 0.3% × particle_count(r*)`、`[cmin, cmax] = [4, 10]`
-
-フォールバック順序
-
-- (1) 上記の同時成立 `r`
-- (2) 物理レンジのみ満たす最初の `r`
-- (3) `r*`
-- (4) いずれも不可 → 最大 `r`
-
-オプション
-
-- 段差対策に移動平均（幅=1–2）を判定にのみ適用可（GUI 設定）。
-
-可視化
-
-- 2 本の折れ線（`particle_count`, `largest_particle_ratio`）＋採択 `r` の縦線、`τratio` の水平線。
-
-**実装**: `src/particle_analysis/volume/optimizer.py` の `optimize_radius_advanced()`（内部で `select_radius_by_constraints` を使用）
-
-**入力**: `volume.npy`  
-**出力**:
-
-- `labels_r1.npy`, `labels_r2.npy`, ... （各半径でのラベルデータ）
-- `optimization_results.csv` （列: `radius, particle_count, largest_particle_ratio, mean_contacts`）
-- 最適な `labels_r*.npy` が選択される
-
-### ステップ 3: 🔗 接触解析
-
-**目的**: 各粒子が何個の粒子と接触しているかを数える
-
-**処理内容**:
-
-1. **近傍探索**: 各粒子の周囲を走査
-   - **6 連結性**（GUI デフォルト）: 面のみの方向（上下左右前後、6 方向）
-   - **26 連結性**（GUI で選択可能）: 面・辺・頂点の全ての方向（26 方向）
-2. **接触判定**: 異なる粒子 ID が隣接している場合、接触として記録
-3. **重複排除**: 双方向の集合（set）を使用して、同じ粒子ペアを 2 回数えないようにする
-4. **接触数の集計**: 各粒子 ID について、接触している粒子の数をカウント
-
-**実装**: `contact/core.py` の `count_contacts()` 関数（引数 `connectivity` は 6/26 をサポート。GUI も 6/26 を提供）
-
-**入力**: `labels_r*.npy`（ラベル付き粒子データ）  
-**出力**: `contact_counts.csv`（各粒子 ID とその接触数）
-
-**注意**: 自動最適化（`--auto_radius`）を使用した場合、最適な `r` でのラベルデータに対して接触解析が実行されます。
-
-### ステップ 4: 📊 統計解析と可視化
-
-**目的**: 解析結果を統計的にまとめて可視化する
-
-**処理内容**:
-
-1. **統計計算**: 接触数データから以下の統計量を計算:
-   - 総粒子数
-   - 平均接触数
-   - 中央値
-   - 標準偏差
-   - 最小値・最大値
-   - 四分位数（25%、75%）
-2. **外れ値の除外**: 接触数が異常に大きい粒子（デフォルト: 200 以上）を自動除外
-3. **ヒストグラム作成**: 接触数の分布をグラフ化して PNG 画像として保存
-4. **CSV 出力**: 統計サマリーを CSV ファイルに保存
-
-**実装**: `contact/core.py` の `analyze_contacts()` 関数
-
-**入力**: `contact_counts.csv`  
-**出力**:
-
-- `contacts_summary.csv` （統計サマリー）
-- `hist_contacts.png` （接触数分布のヒストグラム）
-
----
-
-## 🚀 起動方法（GUI 専用）
-
-GUI（グラフィカルユーザーインターフェース）を使えば、マウス操作だけで解析を実行できます。
-
-#### 1. 必要なライブラリのインストール
+### 1) クローン
 
 ```bash
-# 基本的なライブラリ
-pip install -r requirements.txt
-
-# GUI 用の追加ライブラリ（必要な場合）
-pip install napari[all] qtpy PySide6
+git clone <YOUR_REPO_URL>
+cd kenkyuu
 ```
 
-#### 2. GUI を起動
+Windows PowerShell をお使いの場合は、上記コマンドを PowerShell/Terminal にそのまま貼り付けてください。
+
+### 2) 依存関係インストール
+
+```bash
+pip install -r requirements.txt
+
+# GUI を使う場合（推奨）
+pip install "napari[all]" qtpy matplotlib PySide6
+```
+
+注: GUI 依存はスリム化のため `requirements.txt` に必ずしも含めていません。GUI 利用時に上記を追加インストールしてください。
+
+### 3) GUI の起動
 
 ```bash
 python scripts/run_gui.py
 ```
 
-#### 3. GUI での操作手順
-
-1. **フォルダ選択**: 「Select CT Image Folder」ボタンをクリックして、CT 画像が入っているフォルダを選択
-2. **パラメータ設定**（オプション）:
-   - 「Max Radius」: 試行する最大半径（デフォルト: 10）
-   - 「Min Radius」: 試行する最小半径（デフォルト: 1）
-3. **解析開始**: 「Start Analysis (GO)」ボタンをクリック
-4. **進捗確認**: プログレスバーとテーブルでリアルタイムに結果を確認
-5. **結果表示**: 解析が完了すると、最適な結果がテーブルに表示される
-6. **3D 可視化**（オプション）: 「View in Napari」ボタンで 3D 表示
-
-#### GUI の画面構成
-
-- **上部**: フォルダ選択とパラメータ設定
-- **中央**: 進捗バーと結果テーブル（リアルタイム更新）
-- **下部**: グラフ（HHI、膝点距離、VI 安定性などの指標）
-
-CLI は廃止し、GUI からのみ実行します。
+GUI 上で「📁 Select CT Images Folder」から TIF/TIFF 画像フォルダを選択し、「🚀 分析開始！(GO)」を押してください。
 
 ---
 
-## 📊 出力ファイル
+## 🏗️ フォルダ構成（現行）
 
-解析が完了すると、`output/run_YYYY_MM_DD_HHMM/` フォルダに以下のファイルが生成されます：
-
-### 主要な出力ファイル（厳選された 4 成果物のみ）
-
-| ファイル名                 | 説明                                             | 形式       |
-| -------------------------- | ------------------------------------------------ | ---------- |
-| `contact_counts.csv`       | 各粒子の接触数                                   | CSV        |
-| `contacts_summary.csv`     | 統計サマリー（平均、中央値、最大値など）         | CSV        |
-| `optimization_results.csv` | 最適化結果（各 `r` の評価指標）                  | CSV        |
-| `labels_r{selected}.npy`   | 採択された半径に対応するラベル付き粒子データのみ | NumPy 配列 |
-
-注意: `volume.npy`、未選択の `labels_r*.npy`、`hist_contacts.png` は保存しません。
-
-### ファイルの見方
-
-#### `contact_counts.csv`
-
-```csv
-particle_id,contacts
-1,6
-2,8
-3,5
-...
 ```
-
-- `particle_id`: 粒子の識別番号
-- `contacts`: その粒子が接触している粒子の数
-
-#### `contacts_summary.csv`
-
-```csv
-total_particles,mean_contacts,median_contacts,min_contacts,max_contacts
-1453,7.62,6.0,1,120
+kenkyuu/
+│
+├── README.md
+├── requirements.txt
+├── config/
+│   └── optimized_sand_particles.yaml
+├── scripts/
+│   ├── run_gui.py              # GUI ランチャ
+│   └── view_volume.py          # 3D 可視化（補助）
+└── src/particle_analysis/
+    ├── __init__.py
+    ├── processing.py           # 3D 二値化（高精度 M2 実装）
+    ├── visualize.py            # Napari 可視化ユーティリティ
+    ├── config.py               # パイプライン設定（構造体）
+    ├── utils/
+    │   ├── common.py
+    │   └── file_utils.py       # 画像ファイル取得（自然順）
+    ├── contact/
+    │   └── core.py             # 接触数計算・統計（保存APIは任意利用）
+    ├── volume/
+    │   ├── core.py             # 分割アルゴリズム（侵食→種→EDT→Watershed）
+    │   ├── optimizer.py        # r 最適化と結果保存（CSV/labels）
+    │   ├── data_structures.py  # 結果データ構造
+    │   └── metrics/
+    │       ├── basic.py        # 最大粒子割合など
+    │       └── ...
+    └── gui/
+        ├── main_window.py      # メインUI（簡単操作＋詳細設定）
+        ├── pipeline_handler.py # 3D 二値化（インメモリ、非保存）
+        ├── workers.py          # 最適化ワーカー（バックグラウンド）
+        ├── config.py           # GUI 定数（出力名など）
+        ├── napari_integration.py, widgets.py, ...
 ```
-
-- `total_particles`: 検出された粒子の総数
-- `mean_contacts`: 平均接触数
-- `median_contacts`: 中央値の接触数
-- `min_contacts`: 最小接触数
-- `max_contacts`: 最大接触数
-
-#### `optimization_results.csv`
-
-```csv
-radius,particle_count,mean_contacts,largest_particle_ratio,hhi_dominance,knee_distance,vi_stability
-1,65,1.6,0.998,0.998,4.0,0.5
-2,99,2.0,0.990,0.990,3.0,0.062
-...
-5,1453,7.6,0.029,0.003,0.0,0.245
-```
-
-- `radius`: 試行した半径 `r` の値
-- `particle_count`: 検出された粒子数
-- `mean_contacts`: 平均接触数
-- `largest_particle_ratio`: 最大粒子の体積比
-- `hhi_dominance`: HHI 支配性指標（小さいほど良い）
-- `knee_distance`: 膝点からの距離（小さいほど良い）
-- `vi_stability`: VI 安定性指標（小さいほど良い）
-
-### ファイルの利用方法
-
-- **NumPy ファイル（`.npy`）**: Python で読み込んで可視化や追加解析に使用
-
-  ```python
-  import numpy as np
-  labels = np.load("output/run_20250101_1200/labels_r5.npy")
-  ```
-
-- **CSV ファイル**: Excel や Python（pandas）で統計解析に使用
-
-  ```python
-  import pandas as pd
-  df = pd.read_csv("output/run_20250101_1200/contacts_summary.csv")
-  ```
-
-- **PNG 画像**: 論文やレポートに使用
 
 ---
 
-## 🔧 技術的な詳細
+## 🔄 処理の流れ（現行実装）
 
-### 対応ファイル形式
+### ステップ 1: 📸 高精度 3D 二値化（インメモリ）
 
-- **入力**: PNG, JPG, JPEG, TIF, TIFF, BMP
-- **出力**: NumPy (.npy), CSV, PNG（グラフ）
+- TIF/TIFF を uint16 のまま積層し 3D ボリューム化
+- 2 段階 Otsu（全体 → 前景抽出後の再 Otsu）
+- 前景極性の自動判定（明/暗）
+- 小物体除去・任意クロージング
 
-### 対応データサイズ
+実装: `processing.load_and_binarize_3d_volume()`
+出力: 二値ボリューム（メモリ内）、統計情報（GUI ログに表示）
 
-- **スライス数**: 制限なし（10 枚～ 1000 枚以上）
-- **画像サイズ**: 任意（512×512 推奨）
-- **メモリ**: 16GB 推奨（大規模データセット用）
+### ステップ 2: ✂️ 粒子分割（半径 r を走査）
 
-### 性能特性
+- 半径 r の球状構造要素で侵食 → 種領域ラベル
+- EDT を用いた負距離で Watershed 復元
+- 粒子数、最大粒子割合（largest_particle_ratio）を計算
+- （オプション）同一ラベルから接触数平均を計算（6/26 連結性は GUI で選択）
 
-- **処理速度**: ~1 秒/スライス（512×512）
-- **並列化**: CPU 自動並列対応
-- **メモリ効率**: オンデマンド処理でメモリ使用量最適化
+実装: `volume.core.split_particles_in_memory()`、`volume.metrics.basic.calculate_largest_particle_ratio()`
 
-### 最適化アルゴリズム
+### ステップ 3: 🎯 r の自動選択（ハード制約＋限界効用＋接触レンジ）
 
-#### Pareto + 距離最小化手法
+1. r\* を決定: 最初に `largest_particle_ratio ≤ τratio` を満たす r
+2. r ≥ r\* で同時成立を探索: `Δcount ≤ τgain_abs` かつ `mean_contacts ∈ [cmin, cmax]`
+3. フォールバック: (同時成立) → (接触レンジのみ) → (r\*) → (max r)
 
-3 つの目的関数を最小化して最適な半径 `r` を選択：
+既定: τratio=0.05、τgain_rel=0.003（=0.3% of base）、[cmin,cmax]=[4,10]、平滑化オプションあり
 
-1. **HHI 支配性指標**: 支配的な粒子がないか（未分割検出）
-2. **膝点距離**: 粒子数カーブの「曲がり角」からの距離（過分割防止）
-3. **VI 安定性**: 隣接する `r` 間の一貫性（情報理論的距離）
+実装: `volume.optimizer.optimize_radius_advanced()` 内 `select_radius_by_constraints()`
+出力: 最適 r、全 r の指標テーブル（CSV）、最適 r のラベル配列（npy）
 
-詳細は `docs/OPTIMIZATION_HISTORY.md` を参照してください。
+### ステップ 4: 👀 可視化（任意）
 
-### 依存関係
+- GUI の「🔍 View 3D Results」で Napari 表示（ベスト r のラベル）
+- GUI タブで接触数/体積の分布ヒストグラムを表示（ファイル出力なし）
+
+---
+
+## 📊 出力ファイル（現行仕様）
+
+解析完了後、`output/gui_run_YYYYMMDD_HHMM/` に以下のみ保存します：
+
+| ファイル名                 | 説明                                                                            | 形式  |
+| -------------------------- | ------------------------------------------------------------------------------- | ----- |
+| `optimization_results.csv` | r ごとの集計（`radius, particle_count, largest_particle_ratio, mean_contacts`） | CSV   |
+| `labels_r{best}.npy`       | 採択 r のラベル 3D 配列（int32）                                                | NumPy |
+
+保存しないもの（設計方針）
+
+- `volume.npy`（ボリュームはインメモリ処理）
+- 中間の `labels_r*.npy`（採択 r のみ保存）
+- `contact_counts.csv`, `contacts_summary.csv`, ヒスト PNG（GUI 内の可視化に限定）
+
+必要に応じて `contact/core.py` の `save_contact_csv()` / `analyze_contacts()` を呼び出せば CSV 保存を追加できます（GUI 既定では未保存）。
+
+---
+
+## 🧩 よく使う設定（GUI）
+
+- 最大半径: デフォルト 10（`Advanced Settings` で変更）
+- 連結性: デフォルト 6（面接触のみ。26 は辺・頂点も含み過大評価傾向）
+- τ 比・限界効用・接触レンジ・平滑窓: `Advanced Settings` から変更可
+
+---
+
+## 🔧 トラブルシューティング
+
+### GUI 依存の不足
 
 ```bash
-# 基本的な依存関係
-pip install -r requirements.txt
-
-# GUI 機能（オプション）
-pip install napari[all] qtpy PySide6
-
-# YAML 設定ファイル対応（オプション）
-pip install PyYAML
-
-# 開発・テスト（オプション）
-pip install pytest black flake8
+pip install "napari[all]" qtpy matplotlib PySide6
 ```
 
-### トラブルシューティング
-
-#### GUI 起動時の依存関係エラー
+### Qt バックエンド問題（競合解消）
 
 ```bash
-# エラー: No module named 'napari'
-pip install napari[all] qtpy PySide6
-
-# エラー: Qt backend issues
-pip uninstall PySide6 PyQt5 PyQt6
-pip install PySide6
+pip uninstall -y PySide6 PyQt5 PyQt6
+pip install -y PySide6
 ```
 
-#### メモリ不足エラー
+### 画像が見つからない / 読み込めない
 
-大規模データセット処理時は、`config.py` で以下を調整：
+- フォーマットは TIF/TIFF を推奨（GUI は TIF/TIFF のみを 3D Otsu 対象に認識）
+- サブフォルダではなく「画像が直接並ぶフォルダ」を選択してください
 
-```python
-PROCESSING_CONFIG = {
-    'chunk_size': 32,        # デフォルト: 64
-    'memory_limit': '8GB',   # 使用可能メモリの設定
-}
-```
+### メモリ不足
 
-#### 処理速度の最適化
-
-```bash
-# 並列処理の調整
-export OMP_NUM_THREADS=8  # CPU数に応じて調整
-```
+- 現行実装はインメモリ処理。大規模データでは RAM 余裕のある環境を推奨
+- 画像を間引く/領域を切り出す、最大半径を抑える、で軽減可能
 
 ---
 
-## 📈 解析結果の例
-
-### 最適化済み性能（実データでの結果）
-
-- **粒子検出数**: **1,453 個** （196 スライスから）
-- **平均接触数**: **7.62** （中央値: 6.0、最大: 120）
-- **処理時間**: 約 2 分（フルデータセット）
-- **最大粒子の体積比**: **2.9%** （最適化前: 99.3%）
-
-### 最適化による改善
-
-| **指標**             | **最適化前 (r=2)** | **最適化後 (r=5)** | **改善率**        |
-| -------------------- | ------------------ | ------------------ | ----------------- |
-| **支配的粒子体積比** | 99.3%              | **2.9%**           | **97%削減** ✅    |
-| **平均接触数**       | 1.61               | **7.62**           | **4.7 倍向上** ✅ |
-| **検出粒子数**       | 1,182              | **1,453**          | **23%増加** ✅    |
-| **分布バランス**     | 極度の偏り         | **理想的バランス** | **最適化済み** ✅ |
-
----
-
-## 🧪 テスト
-
-```bash
-# 全テスト実行
-python -m pytest tests/ -v
-
-# 結果: 9/9 passing ✅
-```
-
----
-
-## 📚 参考資料
-
-- **最適化履歴**: `docs/OPTIMIZATION_HISTORY.md`
-
----
-
-## 📜 ライセンス
-
-MIT License - 自由にご利用ください
-
----
-
-## 👥 コントリビューション
-
-プロジェクトへの貢献を歓迎します！
-
-1. **🍴 Fork** このリポジトリ
-2. **🌱 Branch** 機能ブランチを作成
-3. **✏️ Commit** 変更をコミット
-4. **📤 Push** ブランチにプッシュ
-5. **🔄 Pull Request** 作成
-
----
-
-**🎉 3D Particle Analysis Pipeline v2.0 - Ready for Production! 🎉**
-
-_最先端の 3D 解析技術で、あなたの研究を次のレベルへ_ ✨
+**3D Particle Analysis Pipeline v2.x** — 研究用途の再現性と操作性を両立する、GUI 主導の最新実装
