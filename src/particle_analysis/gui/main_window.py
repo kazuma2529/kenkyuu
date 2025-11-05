@@ -147,7 +147,7 @@ class ParticleAnalysisGUI(QWidget):
         step2_label = QLabel("Step 2️⃣")
         step2_label.setStyleSheet("font-size: 13pt; font-weight: bold; color: #5a9bd3;")
         
-        self.start_btn = QPushButton("🚀 Start Analysis (GO)")
+        self.start_btn = QPushButton("🚀 分析開始！(GO)")
         self.start_btn.setObjectName("startButton")
         self.start_btn.setMinimumHeight(60)
         self.start_btn.setMinimumWidth(280)
@@ -225,7 +225,7 @@ class ParticleAnalysisGUI(QWidget):
         
         # Tab 1: Real-time Optimization Results Table
         self.results_table = ResultsTable()
-        self.results_tabs.addTab(self.results_table, "📊 Optimization Progress")
+        self.results_tabs.addTab(self.results_table, "📊 最適化の進捗")
         
         # Removed Optimization Curves tab per design
         
@@ -240,7 +240,7 @@ class ParticleAnalysisGUI(QWidget):
         contact_placeholder_label.setStyleSheet("color: #a0a0a0; font-size: 12pt; padding: 50px;")
         contact_placeholder_layout.addWidget(contact_placeholder_label)
         self.contact_histogram_widget.layout().addWidget(contact_placeholder)
-        self.results_tabs.addTab(self.contact_histogram_widget, "📊 Contact Distribution")
+        self.results_tabs.addTab(self.contact_histogram_widget, "📊 接触分布")
         
         # Tab 3: Particle Volume Distribution Histogram
         self.volume_histogram_widget = MplWidget()
@@ -253,7 +253,7 @@ class ParticleAnalysisGUI(QWidget):
         volume_placeholder_label.setStyleSheet("color: #a0a0a0; font-size: 12pt; padding: 50px;")
         volume_placeholder_layout.addWidget(volume_placeholder_label)
         self.volume_histogram_widget.layout().addWidget(volume_placeholder)
-        self.results_tabs.addTab(self.volume_histogram_widget, "📊 Volume Distribution")
+        self.results_tabs.addTab(self.volume_histogram_widget, "📊 体積分布")
         
         # Tab 4: Final Results and 3D View
         final_results_widget = QWidget()
@@ -272,7 +272,7 @@ class ParticleAnalysisGUI(QWidget):
         final_results_layout.addWidget(self.final_results_text)
         final_results_layout.addWidget(self.view_3d_btn)
         
-        self.results_tabs.addTab(final_results_widget, "🎯 Final Results")
+        self.results_tabs.addTab(final_results_widget, "🎯 最終結果")
         
         # Set default tab to optimization progress
         self.results_tabs.setCurrentIndex(0)
@@ -739,23 +739,23 @@ class ParticleAnalysisGUI(QWidget):
             # Add largest particle ratio to results
             largest_ratio = getattr(best_result, 'largest_particle_ratio', 0.0)
             
-            results_text = f"""🎯 OPTIMAL RADIUS: r = {summary.best_radius}
+            results_text = f"""🎯 最適ｒ値: r = {summary.best_radius}
 
-📊 Constraint-based Selection:
-• Particles: {best_result.particle_count:,}
-• Mean Contacts: {best_result.mean_contacts:.1f}
-• Largest Particle: {largest_ratio * 100:.1f}%
+📊 厳選された重要データ:
+• 粒子数: {best_result.particle_count:,}
+• 平均接触数: {best_result.mean_contacts:.1f}
+• 最大粒子割合: {largest_ratio * 100:.1f}%
 
-🔗 Contact Method: {connectivity_name}
-✅ Optimization: {summary.optimization_method}
-🔬 Explanation: Selected via HardConstraint + MarginalGain + ContactsRange
+🔗 接触方式: {connectivity_name}
+✅ 最適化手法: {summary.optimization_method}
+🔬 選択理由: Selected via HardConstraint + MarginalGain + ContactsRange
 
-📁 Saved Results:
+📁 保存された結果:
 {csv_exists} CSV: optimization_results.csv
 {labels_exists} Labels: labels_r{summary.best_radius}.npy
-📂 Location: {self.output_dir}
+📂 保存先: {self.output_dir}
 
-💡 View "📊 Contact Distribution" and "📊 Volume Distribution" for insights
+💡 "📊 接触分布"と"📊 体積分布"を確認してください
 """
             self.final_results_text.setText(results_text)
         

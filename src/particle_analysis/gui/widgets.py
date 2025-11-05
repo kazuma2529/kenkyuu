@@ -61,8 +61,8 @@ class ResultsTable(QTableWidget):
     def setup_table(self):
         """Setup table headers and formatting."""
         headers = [
-            "Radius", "Particles", "Mean Contacts", "Largest Particle (%)",
-            "Processing Time (s)", "Status"
+            "ｒ値", "粒子数", "平均接触数", "最大粒子割合(%)",
+            "処理時間(秒)", "ステータス"
         ]
         self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
