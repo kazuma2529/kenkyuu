@@ -38,17 +38,18 @@ def get_image_files(directory: Path, supported_formats: List[str] = None) -> Lis
         supported_formats: List of glob patterns (default: common image formats)
         
     Returns:
-        List of Path objects sorted naturally
+        List of Path objects sorted naturally (duplicates removed)
     """
     if supported_formats is None:
         supported_formats = ["*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff", "*.bmp"]
     
-    image_files = []
+    # Use set to avoid duplicates (important on Windows where case is ignored)
+    image_files_set = set()
     for pattern in supported_formats:
-        image_files.extend(directory.glob(pattern))
+        image_files_set.update(directory.glob(pattern))
     
-    # Sort using natural ordering
-    image_files.sort(key=natural_sort_key)
+    # Convert back to list and sort using natural ordering
+    image_files = sorted(list(image_files_set), key=natural_sort_key)
     
     return image_files
 

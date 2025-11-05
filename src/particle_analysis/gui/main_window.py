@@ -25,7 +25,7 @@ from qtpy.QtCore import Qt
 from qtpy.QtGui import QFont
 
 from .workers import OptimizationWorker
-from .widgets import ResultsTable, ResultsPlotter
+from .widgets import ResultsTable, ResultsPlotter, MplWidget, HistogramPlotter
 from .launcher import _ensure_gui_available
 from .pipeline_handler import PipelineHandler
 from .config import (
@@ -216,15 +216,37 @@ class ParticleAnalysisGUI(QWidget):
         # Tab Widget for Results
         self.results_tabs = QTabWidget()
         
-        # Real-time Results Table Tab
+        # Tab 1: Real-time Optimization Results Table
         self.results_table = ResultsTable()
-        self.results_tabs.addTab(self.results_table, "📊 Real-time Results")
+        self.results_tabs.addTab(self.results_table, "📊 Optimization Progress")
         
-        # Analysis Graphs Tab
-        self.results_plotter = ResultsPlotter()
-        self.results_tabs.addTab(self.results_plotter, "📈 Analysis Graphs")
+        # Tab 2: Contact Number Distribution Histogram
+        self.contact_histogram_widget = MplWidget()
+        self.contact_histogram_widget.setMinimumHeight(400)
+        # Add placeholder text
+        contact_placeholder = QWidget()
+        contact_placeholder_layout = QVBoxLayout(contact_placeholder)
+        contact_placeholder_label = QLabel("📊 Contact number distribution will appear here after analysis completes")
+        contact_placeholder_label.setAlignment(Qt.AlignCenter)
+        contact_placeholder_label.setStyleSheet("color: #a0a0a0; font-size: 12pt; padding: 50px;")
+        contact_placeholder_layout.addWidget(contact_placeholder_label)
+        self.contact_histogram_widget.layout().addWidget(contact_placeholder)
+        self.results_tabs.addTab(self.contact_histogram_widget, "📊 Contact Distribution")
         
-        # Final Results Tab
+        # Tab 3: Particle Volume Distribution Histogram
+        self.volume_histogram_widget = MplWidget()
+        self.volume_histogram_widget.setMinimumHeight(400)
+        # Add placeholder text
+        volume_placeholder = QWidget()
+        volume_placeholder_layout = QVBoxLayout(volume_placeholder)
+        volume_placeholder_label = QLabel("📊 Particle volume distribution will appear here after analysis completes")
+        volume_placeholder_label.setAlignment(Qt.AlignCenter)
+        volume_placeholder_label.setStyleSheet("color: #a0a0a0; font-size: 12pt; padding: 50px;")
+        volume_placeholder_layout.addWidget(volume_placeholder_label)
+        self.volume_histogram_widget.layout().addWidget(volume_placeholder)
+        self.results_tabs.addTab(self.volume_histogram_widget, "📊 Volume Distribution")
+        
+        # Tab 4: Final Results and 3D View
         final_results_widget = QWidget()
         final_results_layout = QVBoxLayout(final_results_widget)
         
@@ -242,6 +264,9 @@ class ParticleAnalysisGUI(QWidget):
         final_results_layout.addWidget(self.view_3d_btn)
         
         self.results_tabs.addTab(final_results_widget, "🎯 Final Results")
+        
+        # Set default tab to optimization progress
+        self.results_tabs.setCurrentIndex(0)
         
         layout.addWidget(self.results_tabs)
         
@@ -432,7 +457,8 @@ class ParticleAnalysisGUI(QWidget):
         
         # Clear previous results
         self.results_table.clear_results()
-        self.results_plotter.clear_plots()
+        self.contact_histogram_widget.clear()
+        self.volume_histogram_widget.clear()
         self.optimization_summary = None
         
         # Prepare UI for analysis
@@ -529,7 +555,8 @@ class ParticleAnalysisGUI(QWidget):
             self.temp_results = [result]
             self.temp_metrics = [new_metrics]
         
-        self.results_plotter.update_plots(self.temp_results, new_metrics_data=self.temp_metrics)
+        # Note: Histograms are plotted once at the end (in on_optimization_complete)
+        # Real-time plot updates are not needed for research-oriented histograms
         
         logger.info(
             f"Table updated: r={result.radius}, particles={result.particle_count}, "
@@ -579,11 +606,13 @@ class ParticleAnalysisGUI(QWidget):
             getattr(self, 'temp_results', None)
         )
     
-    def on_optimization_complete(self, summary):
-        """Handle optimization completion."""
+    def on_optimization_complete(self, summary, contact_histogram, volume_histogram):
+        """Handle optimization completion with histogram data."""
         logger.info("=" * 70)
         logger.info("on_optimization_complete CALLED!")
         logger.info(f"Summary received: {summary}")
+        logger.info(f"Contact histogram: {contact_histogram is not None}")
+        logger.info(f"Volume histogram: {volume_histogram is not None}")
         logger.info(f"Optimization complete: {len(summary.results)} radii tested, best r={summary.best_radius}")
         logger.info("=" * 70)
         self.optimization_summary = summary
@@ -607,11 +636,15 @@ class ParticleAnalysisGUI(QWidget):
             csv_path = self.output_dir / "optimization_results.csv"
             csv_exists = "✅" if csv_path.exists() else "❌"
             
+            # Add largest particle ratio to results
+            largest_ratio = getattr(best_result, 'largest_particle_ratio', 0.0)
+            
             results_text = f"""🎯 OPTIMAL RADIUS: r = {summary.best_radius}
 
 📊 Pareto+Distance Results:
 • Particles: {best_result.particle_count:,}
 • Mean Contacts: {best_result.mean_contacts:.1f}
+• Largest Particle: {largest_ratio * 100:.1f}%
 • HHI Dominance: {best_metrics['hhi']:.3f}
 • Knee Distance: {best_metrics['knee_dist']:.1f}
 • VI Stability: {best_metrics['vi_stability']:.3f}
@@ -627,17 +660,32 @@ class ParticleAnalysisGUI(QWidget):
 📂 Location: {self.output_dir}
 
 💡 Click "🔍 View 3D Results" to visualize in Napari
+💡 View "📊 Contact Distribution" and "📊 Volume Distribution" tabs for research insights
 """
             self.final_results_text.setText(results_text)
-        
-        # Update plots with best radius highlighted
-        self.results_plotter.update_plots(summary.results, summary.best_radius, final_metrics_data)
         
         # Clear and rebuild table with final metrics
         self.results_table.clear_results()
         for i, result in enumerate(summary.results):
             is_best = (result.radius == summary.best_radius)
             self.results_table.add_result(result, final_metrics_data[i], is_best)
+        
+        # Plot histograms
+        if contact_histogram:
+            HistogramPlotter.plot_contact_histogram(
+                self.contact_histogram_widget, 
+                contact_histogram
+            )
+        else:
+            logger.warning("No contact histogram data available")
+        
+        if volume_histogram:
+            HistogramPlotter.plot_volume_histogram(
+                self.volume_histogram_widget, 
+                volume_histogram
+            )
+        else:
+            logger.warning("No volume histogram data available")
         
         # Enable 3D viewing
         self.view_3d_btn.setEnabled(True)
@@ -651,38 +699,7 @@ class ParticleAnalysisGUI(QWidget):
     
     def _calculate_final_metrics(self, result, all_results):
         """Calculate comprehensive metrics for final display."""
-        from ..volume.metrics import calculate_hhi, calculate_variation_of_information
-        from ..volume.optimization.utils import detect_knee_point
-        
-        # Calculate HHI
-        hhi = 0.0
-        if hasattr(result, 'labels_path') and result.labels_path:
-            try:
-                labels = np.load(result.labels_path)
-                hhi = calculate_hhi(labels)
-            except Exception as e:
-                logger.warning(f"Failed to calculate HHI for r={result.radius}: {e}")
-                hhi = result.largest_particle_ratio
-        
-        # Calculate knee distance
-        knee_dist = 0.0
-        radii = [r.radius for r in all_results]
-        counts = [r.particle_count for r in all_results]
-        if len(radii) >= 3:
-            try:
-                knee_idx = detect_knee_point(radii, counts)
-                knee_dist = abs(result.radius - radii[knee_idx])
-            except Exception as e:
-                logger.warning(f"Failed to detect knee point: {e}")
-        
-        # Calculate VI stability
-        vi_stability = self._calculate_vi_for_result(result, all_results)
-        
-        return {
-            'hhi': hhi,
-            'knee_dist': knee_dist,
-            'vi_stability': vi_stability
-        }
+        return MetricsCalculator.calculate_final_metrics(result, all_results)
     
     
     def on_error_occurred(self, error_msg):
@@ -710,7 +727,7 @@ class ParticleAnalysisGUI(QWidget):
             best_labels_path: Path to best_labels.npy file
         """
         try:
-            if napari is None:
+            if not NAPARI_AVAILABLE:
                 QMessageBox.warning(
                     self, 
                     "Napari Not Available", 
@@ -720,75 +737,26 @@ class ParticleAnalysisGUI(QWidget):
                 )
                 return
             
-            # Load data
+            # Use NapariViewerManager to load best labels
             volume_path = self.output_dir / "volume.npy"
-            best_labels = np.load(best_labels_path)
-            
             best_r = self.optimization_summary.best_radius
             best_result = self.optimization_summary.get_result_by_radius(best_r)
             
-            logger.info(f"Opening Napari with best result (r={best_r})")
-            logger.info(f"Labels shape: {best_labels.shape}")
-            logger.info(f"Unique particles: {best_labels.max()}")
+            # Prepare metadata
+            metadata = {
+                'Best Radius': best_r,
+                'Particle Count': best_result.particle_count,
+                'Mean Contacts': f"{best_result.mean_contacts:.2f}",
+                'Status': best_result.status
+            }
             
-            # Check if viewer exists and is still valid
-            viewer_needs_creation = True
-            if self.napari_viewer is not None:
-                try:
-                    _ = self.napari_viewer.layers
-                    viewer_needs_creation = False
-                    # Clear existing layers
-                    self.napari_viewer.layers.clear()
-                except (RuntimeError, AttributeError):
-                    self.napari_viewer = None
-                    viewer_needs_creation = True
-            
-            # Create new viewer if needed
-            if viewer_needs_creation:
-                title = f"3D Particle Analysis - Best Result (r={best_r})"
-                self.napari_viewer = napari.Viewer(title=title)
-                
-                # Setup cleanup on close
-                original_close = self.napari_viewer.close
-                def close_with_cleanup():
-                    self.napari_viewer = None
-                    original_close()
-                self.napari_viewer.close = close_with_cleanup
-            
-            # Load volume if available (as background)
-            if volume_path.exists():
-                volume = np.load(volume_path)
-                self.napari_viewer.add_image(
-                    volume, 
-                    name="Binary Volume", 
-                    rendering="mip",
-                    opacity=0.3,
-                    colormap="gray"
-                )
-            
-            # Load best labels (main layer)
-            self.napari_viewer.add_labels(
-                best_labels, 
-                name=f"Optimized Particles (r={best_r})",
-                opacity=0.8
+            # Use manager to open viewer
+            self.napari_manager.load_best_labels(
+                best_labels_path=best_labels_path,
+                volume_path=volume_path if volume_path.exists() else None,
+                best_radius=best_r,
+                metadata=metadata
             )
-            
-            # Add metadata as text overlay
-            if best_result:
-                metadata_text = (
-                    f"Best Radius: {best_r}\n"
-                    f"Particles: {best_result.particle_count}\n"
-                    f"Mean Contacts: {best_result.mean_contacts:.1f}\n"
-                    f"Largest Ratio: {best_result.largest_particle_ratio:.2%}"
-                )
-                logger.info(f"Best result metadata:\n{metadata_text}")
-            
-            # Set optimal view
-            self.napari_viewer.dims.ndisplay = 3  # 3D mode
-            self.napari_viewer.camera.angles = (45, 45, 45)  # Nice viewing angle
-            
-            # Show viewer window
-            self.napari_viewer.window.show()
             
             logger.info("✅ Napari viewer opened successfully")
             
@@ -837,105 +805,33 @@ class ParticleAnalysisGUI(QWidget):
                 QMessageBox.warning(self, "Warning", "Volume file not found.")
                 return
             
-            if napari is None:
-                QMessageBox.warning(self, "Warning", "Napari not available for 3D viewing.")
+            if not NAPARI_AVAILABLE:
+                QMessageBox.warning(
+                    self, 
+                    "Napari Not Available", 
+                    "Napari is not installed.\n\n"
+                    "Install it with:\n"
+                    "pip install napari[all]"
+                )
                 return
             
-            # Check if viewer exists and is still valid
-            viewer_needs_creation = True
-            if self.napari_viewer is not None:
-                try:
-                    # Try to access the viewer to check if it's still valid
-                    _ = self.napari_viewer.layers
-                    viewer_needs_creation = False
-                except (RuntimeError, AttributeError):
-                    # Viewer has been deleted/closed
-                    self.napari_viewer = None
-                    viewer_needs_creation = True
-            
-            # Create new viewer if needed
-            if viewer_needs_creation:
-                self.napari_viewer = napari.Viewer(title="3D Particle Analysis - All Radii")
-                
-                # Store original close method and override with cleanup
-                original_close = self.napari_viewer.close
-                
-                def close_with_cleanup():
-                    self.napari_viewer = None
-                    original_close()
-                
-                # Override close method instead of using events
-                self.napari_viewer.close = close_with_cleanup
-                
-                # Load volume once
-                volume = np.load(volume_path)
-                self.napari_viewer.add_image(volume, name="Volume", rendering="mip")
-            
-            # Clear existing label layers (with safety check)
-            try:
-                for layer in list(self.napari_viewer.layers):
-                    if layer.name.startswith("Particles"):
-                        self.napari_viewer.layers.remove(layer)
-            except (RuntimeError, AttributeError):
-                # If viewer became invalid during operation, recreate it
-                self.napari_viewer = None
-                return self.load_3d_results(radius)  # Recursive call to restart
-            
-            # Add all available radius results
-            if self.optimization_summary:
-                try:
-                    # Sort results by radius
-                    sorted_results = sorted(self.optimization_summary.results, key=lambda x: x.radius)
-                    
-                    for result in sorted_results:
-                        labels_path = self.output_dir / f"labels_r{result.radius}.npy"
-                        
-                        if labels_path.exists():
-                            labels = np.load(labels_path)
-                            
-                            # Create layer name with details
-                            layer_name = f"Particles r={result.radius} ({result.particle_count}p, {result.mean_contacts:.1f}c)"
-                            
-                            # Add layer with unique colormap
-                            layer = self.napari_viewer.add_labels(
-                                labels.astype(np.int32), 
-                                name=layer_name,
-                                blending="translucent",
-                                opacity=0.7
-                            )
-                            
-                            # Highlight best radius
-                            if result.radius == self.optimization_summary.best_radius:
-                                layer.name = f"★ {layer_name} (BEST)"
-                                layer.opacity = 1.0
-                            
-                            # Initially show only best radius
-                            if result.radius != self.optimization_summary.best_radius:
-                                layer.visible = False
-                    
-                    # Update window title
-                    best_r = self.optimization_summary.best_radius
-                    self.napari_viewer.title = f"3D Particle Analysis - Best: r={best_r} (click layers to compare)"
-                    
-                except (RuntimeError, AttributeError):
-                    # If viewer became invalid during operation
-                    QMessageBox.warning(self, "Warning", "3D viewer became unavailable during setup. Please try again.")
-                    self.napari_viewer = None
-                    return
-            
-            # Show viewer (with safety check)
-            try:
-                self.napari_viewer.show()
-            except (RuntimeError, AttributeError):
-                QMessageBox.warning(self, "Warning", "Failed to show 3D viewer. Please try again.")
-                self.napari_viewer = None
+            # Get list of radii from optimization summary
+            if not self.optimization_summary:
+                QMessageBox.warning(self, "Warning", "No optimization results available.")
                 return
             
-            # Add instruction message
-            if self.optimization_summary:
-                logger.info("3D Viewer launched successfully")
-                logger.info(f"Best radius (r={self.optimization_summary.best_radius}) is shown by default")
-                logger.info("Use layer panel to toggle and compare different radius results")
+            radii = [result.radius for result in self.optimization_summary.results]
+            best_radius = self.optimization_summary.best_radius
+            
+            # Use NapariViewerManager to load all radii
+            self.napari_manager.load_all_radii(
+                output_dir=self.output_dir,
+                volume_path=volume_path,
+                radii=radii,
+                best_radius=best_radius
+            )
+            
+            logger.info(f"✅ Loaded {len(radii)} radius results in Napari")
             
         except Exception as e:
             QMessageBox.critical(self, "3D Viewer Error", f"Failed to load 3D results:\n\n{str(e)}")

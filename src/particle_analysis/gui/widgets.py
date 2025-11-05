@@ -1,19 +1,52 @@
 """GUI widgets for displaying analysis results.
 
 This module contains specialized Qt widgets for displaying optimization
-results in tabular and graphical formats with new Pareto+distance indicators.
+results in tabular and graphical formats, plus research-oriented histogram plots.
 """
 
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import numpy as np
-from qtpy.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem
+from qtpy.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel
+from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 logger = logging.getLogger(__name__)
+
+
+class MplWidget(QWidget):
+    """Simple Matplotlib canvas widget for embedding plots in Qt.
+    
+    This widget provides a dark-themed matplotlib canvas that integrates
+    seamlessly with the application's dark theme.
+    """
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_canvas()
+    
+    def setup_canvas(self):
+        """Setup matplotlib canvas with dark theme."""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create matplotlib figure
+        self.figure = Figure(figsize=(8, 6), facecolor='#2c313a')
+        self.canvas = FigureCanvas(self.figure)
+        
+        # Apply dark theme
+        self.canvas.figure.patch.set_facecolor('#2c313a')
+        
+        layout.addWidget(self.canvas)
+        self.setLayout(layout)
+    
+    def clear(self):
+        """Clear the figure."""
+        self.figure.clear()
+        self.canvas.draw()
 
 
 class ResultsTable(QTableWidget):
@@ -26,8 +59,8 @@ class ResultsTable(QTableWidget):
     def setup_table(self):
         """Setup table headers and formatting."""
         headers = [
-            "Radius", "Particles", "Mean Contacts", "HHI", "Knee Dist", 
-            "VI Stability", "Processing Time (s)", "Status"
+            "Radius", "Particles", "Mean Contacts", "Largest Particle (%)", 
+            "HHI", "Knee Dist", "VI Stability", "Processing Time (s)", "Status"
         ]
         self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
@@ -35,12 +68,13 @@ class ResultsTable(QTableWidget):
         # Set column widths
         self.setColumnWidth(0, 60)   # Radius
         self.setColumnWidth(1, 80)   # Particles
-        self.setColumnWidth(2, 100)  # Mean Contacts
-        self.setColumnWidth(3, 80)   # HHI
-        self.setColumnWidth(4, 80)   # Knee Distance
-        self.setColumnWidth(5, 90)   # VI Stability
-        self.setColumnWidth(6, 130)  # Processing Time
-        self.setColumnWidth(7, 100)  # Status
+        self.setColumnWidth(2, 110)  # Mean Contacts
+        self.setColumnWidth(3, 130)  # Largest Particle (%)
+        self.setColumnWidth(4, 80)   # HHI
+        self.setColumnWidth(5, 80)   # Knee Distance
+        self.setColumnWidth(6, 90)   # VI Stability
+        self.setColumnWidth(7, 130)  # Processing Time
+        self.setColumnWidth(8, 100)  # Status
         
         # Enable selection
         self.setSelectionBehavior(QTableWidget.SelectRows)
@@ -55,24 +89,28 @@ class ResultsTable(QTableWidget):
         if new_metrics is None:
             new_metrics = {'hhi': 0.0, 'knee_dist': 0.0, 'vi_stability': 0.0}
         
+        # Get largest_particle_ratio (default to 0.0 if not available)
+        largest_ratio = getattr(result, 'largest_particle_ratio', 0.0)
+        
         # Add data
         self.setItem(row, 0, QTableWidgetItem(str(result.radius)))
         self.setItem(row, 1, QTableWidgetItem(str(result.particle_count)))
         self.setItem(row, 2, QTableWidgetItem(f"{result.mean_contacts:.1f}"))
-        self.setItem(row, 3, QTableWidgetItem(f"{new_metrics.get('hhi', 0.0):.3f}"))
-        self.setItem(row, 4, QTableWidgetItem(f"{new_metrics.get('knee_dist', 0.0):.1f}"))
-        self.setItem(row, 5, QTableWidgetItem(f"{new_metrics.get('vi_stability', 0.0):.3f}"))
-        self.setItem(row, 6, QTableWidgetItem(f"{result.processing_time:.1f}"))
+        self.setItem(row, 3, QTableWidgetItem(f"{largest_ratio * 100:.1f}"))  # Convert to percentage
+        self.setItem(row, 4, QTableWidgetItem(f"{new_metrics.get('hhi', 0.0):.3f}"))
+        self.setItem(row, 5, QTableWidgetItem(f"{new_metrics.get('knee_dist', 0.0):.1f}"))
+        self.setItem(row, 6, QTableWidgetItem(f"{new_metrics.get('vi_stability', 0.0):.3f}"))
+        self.setItem(row, 7, QTableWidgetItem(f"{result.processing_time:.1f}"))
         
-        # Status
+        # Status (now column 8)
         if is_best:
-            self.setItem(row, 7, QTableWidgetItem("★ OPTIMAL"))
+            self.setItem(row, 8, QTableWidgetItem("★ OPTIMAL"))
         elif new_metrics.get('hhi', 1.0) > 0.5:
-            self.setItem(row, 7, QTableWidgetItem("Under-segmented"))
+            self.setItem(row, 8, QTableWidgetItem("Under-segmented"))
         elif new_metrics.get('hhi', 0.0) < 0.01:
-            self.setItem(row, 7, QTableWidgetItem("Well-segmented"))
+            self.setItem(row, 8, QTableWidgetItem("Well-segmented"))
         else:
-            self.setItem(row, 7, QTableWidgetItem("Partial"))
+            self.setItem(row, 8, QTableWidgetItem("Partial"))
         
         # Highlight best result
         if is_best:
@@ -244,4 +282,170 @@ class ResultsPlotter(QWidget):
             logger.warning(f"Failed to calculate plot metrics: {e}")
             return [{'hhi': 0.0, 'knee_dist': 0.0, 'vi': 0.0} for _ in results_data]
 
-__all__ = ["ResultsTable", "ResultsPlotter"] 
+class HistogramPlotter:
+    """Utility class for plotting histograms on matplotlib widgets."""
+    
+    @staticmethod
+    def plot_contact_histogram(mpl_widget: MplWidget, contact_data: Dict) -> None:
+        """Plot contact number distribution histogram.
+        
+        Args:
+            mpl_widget: MplWidget to plot on
+            contact_data: Dict with keys 'values' (list of contact counts),
+                          'min', 'max', 'mean', 'median'
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if not contact_data or 'values' not in contact_data:
+            logger.warning("Invalid contact histogram data")
+            return
+        
+        try:
+            # Clear previous plot
+            mpl_widget.clear()
+            
+            # Create subplot
+            ax = mpl_widget.figure.add_subplot(111)
+            
+            # Plot histogram
+            values = contact_data['values']
+            min_contact = int(min(values))
+            max_contact = int(max(values))
+            
+            # Calculate appropriate bin range
+            # Use integer bins for contact counts (each bin represents one contact number)
+            bin_range = range(min_contact, max_contact + 2)  # +2 to include max value
+            
+            # Plot histogram with proper binning
+            n, bins, patches = ax.hist(values, bins=bin_range, 
+                                      color='#5a9bd3', edgecolor='white', alpha=0.8)
+            
+            # Add mean and median lines
+            mean_val = contact_data.get('mean', np.mean(values))
+            median_val = contact_data.get('median', np.median(values))
+            
+            ax.axvline(mean_val, color='#5cb85c', linestyle='--', linewidth=2, 
+                      label=f'Mean: {mean_val:.1f}')
+            ax.axvline(median_val, color='#f0ad4e', linestyle='--', linewidth=2, 
+                      label=f'Median: {median_val:.1f}')
+            
+            # Add reference lines for 6-neighborhood
+            if mean_val < 15:  # Likely 6-neighborhood
+                ax.axvline(6.0, color='green', linestyle=':', linewidth=2, alpha=0.5, 
+                          label='Theory (Random Close Pack): 6.0')
+            
+            # Set X-axis limits to fit the data with small padding
+            # Use max of (data_max, theory_line, mean+some_padding) to ensure visibility
+            x_max = max(max_contact, mean_val * 1.5, 6.0 if mean_val < 15 else 0)
+            x_max = int(x_max) + 2  # Add small padding
+            ax.set_xlim(-0.5, x_max)  # -0.5 to show the first bin properly
+            
+            # Styling
+            ax.set_xlabel('Number of Contacts per Particle', fontsize=12, color='white')
+            ax.set_ylabel('Frequency (Particle Count)', fontsize=12, color='white')
+            ax.set_title('Contact Number Distribution', fontsize=14, fontweight='bold', color='white')
+            ax.legend(facecolor='#23272e', edgecolor='white', fontsize=10)
+            ax.grid(True, alpha=0.3, color='white')
+            
+            # Set integer ticks on X-axis for better readability
+            # Show ticks every 1 unit if range is small, otherwise every 2-5 units
+            if x_max <= 10:
+                tick_step = 1
+            elif x_max <= 20:
+                tick_step = 2
+            else:
+                tick_step = max(2, x_max // 10)
+            ax.set_xticks(range(0, x_max + 1, tick_step))
+            
+            # Dark theme styling
+            ax.set_facecolor('#2c313a')
+            ax.spines['bottom'].set_color('white')
+            ax.spines['top'].set_color('white')
+            ax.spines['left'].set_color('white')
+            ax.spines['right'].set_color('white')
+            ax.tick_params(colors='white')
+            
+            mpl_widget.figure.tight_layout()
+            mpl_widget.canvas.draw()
+            
+            logger.info(f"✅ Plotted contact histogram: {len(values)} particles, mean={mean_val:.2f}")
+        
+        except Exception as e:
+            logger.error(f"Failed to plot contact histogram: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    @staticmethod
+    def plot_volume_histogram(mpl_widget: MplWidget, volume_data: Dict) -> None:
+        """Plot particle volume distribution histogram.
+        
+        Args:
+            mpl_widget: MplWidget to plot on
+            volume_data: Dict with keys 'values' (list of volumes),
+                         'min', 'max', 'mean', 'median'
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if not volume_data or 'values' not in volume_data:
+            logger.warning("Invalid volume histogram data")
+            return
+        
+        try:
+            # Clear previous plot
+            mpl_widget.clear()
+            
+            # Create subplot
+            ax = mpl_widget.figure.add_subplot(111)
+            
+            # Plot histogram with logarithmic bins for better visualization
+            values = volume_data['values']
+            ax.hist(values, bins=50, color='#d9534f', edgecolor='white', alpha=0.8)
+            
+            # Add mean and median lines
+            mean_val = volume_data.get('mean', np.mean(values))
+            median_val = volume_data.get('median', np.median(values))
+            
+            ax.axvline(mean_val, color='#5cb85c', linestyle='--', linewidth=2, 
+                      label=f'Mean: {mean_val:.0f} voxels')
+            ax.axvline(median_val, color='#f0ad4e', linestyle='--', linewidth=2, 
+                      label=f'Median: {median_val:.0f} voxels')
+            
+            # Styling
+            ax.set_xlabel('Particle Volume (voxels)', fontsize=12, color='white')
+            ax.set_ylabel('Frequency (Particle Count)', fontsize=12, color='white')
+            ax.set_title('Particle Volume Distribution', fontsize=14, fontweight='bold', color='white')
+            ax.legend(facecolor='#23272e', edgecolor='white', fontsize=10)
+            ax.grid(True, alpha=0.3, color='white')
+            
+            # Dark theme styling
+            ax.set_facecolor('#2c313a')
+            ax.spines['bottom'].set_color('white')
+            ax.spines['top'].set_color('white')
+            ax.spines['left'].set_color('white')
+            ax.spines['right'].set_color('white')
+            ax.tick_params(colors='white')
+            
+            # Add statistics text
+            stats_text = (
+                f"Total Particles: {len(values)}\n"
+                f"Range: [{volume_data['min']}, {volume_data['max']}]"
+            )
+            ax.text(0.98, 0.98, stats_text, transform=ax.transAxes, 
+                   verticalalignment='top', horizontalalignment='right',
+                   bbox=dict(boxstyle='round', facecolor='#23272e', alpha=0.8, edgecolor='white'),
+                   fontsize=9, color='white')
+            
+            mpl_widget.figure.tight_layout()
+            mpl_widget.canvas.draw()
+            
+            logger.info(f"✅ Plotted volume histogram: {len(values)} particles, mean={mean_val:.0f}")
+        
+        except Exception as e:
+            logger.error(f"Failed to plot volume histogram: {e}")
+            import traceback
+            traceback.print_exc()
+
+
+__all__ = ["MplWidget", "ResultsTable", "ResultsPlotter", "HistogramPlotter"] 

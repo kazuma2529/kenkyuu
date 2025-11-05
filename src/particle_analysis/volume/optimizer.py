@@ -87,13 +87,14 @@ def optimize_radius_advanced(
         # Calculate mean contacts if requested
         mean_contacts = 0.0
         if complete_analysis and num_particles > 0:
-            logger.info(f"Starting contact calculation for r={r} with {num_particles} particles")
+            logger.info(f"Starting contact calculation for r={r} with {num_particles} particles using connectivity={connectivity}")
             try:
                 # Import from contact package
                 from ..contact import count_contacts
                 logger.info(f"Successfully imported count_contacts function")
                 
-                contacts_dict = count_contacts(labels, connectivity=26)
+                # Use the connectivity parameter passed to optimize_radius_advanced
+                contacts_dict = count_contacts(labels, connectivity=connectivity)
                 
                 if contacts_dict and len(contacts_dict) > 0:
                     contact_values = list(contacts_dict.values())

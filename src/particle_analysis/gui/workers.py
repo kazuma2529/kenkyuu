@@ -22,7 +22,7 @@ class OptimizationWorker(QThread):
     
     # Signals for GUI updates
     progress_updated = pyqtSignal(object)  # OptimizationResult (for table updates)
-    optimization_complete = pyqtSignal(object)  # OptimizationSummary (final results)
+    optimization_complete = pyqtSignal(object, object, object)  # (OptimizationSummary, contact_histogram_data, volume_histogram_data)
     error_occurred = pyqtSignal(str)  # Error message
     
     # NEW: Additional signals for detailed progress tracking
@@ -105,9 +105,13 @@ class OptimizationWorker(QThread):
                     import traceback
                     traceback.print_exc()
                 
-                # Emit completion
-                logger.info("Emitting optimization_complete signal...")
-                self.optimization_complete.emit(summary)
+                # Calculate histogram data for final visualization
+                logger.info("Calculating histogram data for visualization...")
+                contact_histogram, volume_histogram = self._calculate_histogram_data(summary)
+                
+                # Emit completion with histogram data
+                logger.info("Emitting optimization_complete signal with histogram data...")
+                self.optimization_complete.emit(summary, contact_histogram, volume_histogram)
                 logger.info("Signal emitted successfully")
                 
                 # Final status
@@ -196,5 +200,97 @@ class OptimizationWorker(QThread):
             logger.info(f"   Unique particles: {labels.max()}")
         else:
             logger.warning(f"⚠️ Best labels file not found: {best_labels_src}")
+    
+    def _calculate_histogram_data(self, summary):
+        """Calculate histogram data for final visualization.
+        
+        This calculates:
+        1. Contact number distribution histogram
+        2. Particle volume distribution histogram
+        
+        Args:
+            summary: OptimizationSummary with best_radius
+            
+        Returns:
+            tuple: (contact_histogram_data, volume_histogram_data)
+                   Each is a dict with 'values' and 'bins' keys, or None if calculation fails
+        """
+        output_dir = Path(self.output_dir)
+        best_labels_path = output_dir / "best_labels.npy"
+        
+        contact_histogram_data = None
+        volume_histogram_data = None
+        
+        try:
+            if not best_labels_path.exists():
+                logger.warning(f"Best labels not found at {best_labels_path}, cannot calculate histogram data")
+                return contact_histogram_data, volume_histogram_data
+            
+            # Load best labels
+            labels = np.load(best_labels_path)
+            logger.info(f"Loaded best labels for histogram calculation: {labels.shape}, {labels.max()} particles")
+            
+            # 1. Calculate particle volumes
+            # Skip background (label 0)
+            unique_labels = np.unique(labels)
+            unique_labels = unique_labels[unique_labels > 0]  # Remove background
+            
+            if len(unique_labels) == 0:
+                logger.warning("No particles found in best labels")
+                return contact_histogram_data, volume_histogram_data
+            
+            volumes = []
+            for label_id in unique_labels:
+                volume = np.count_nonzero(labels == label_id)
+                volumes.append(volume)
+            
+            volume_histogram_data = {
+                'values': volumes,
+                'min': int(np.min(volumes)),
+                'max': int(np.max(volumes)),
+                'mean': float(np.mean(volumes)),
+                'median': float(np.median(volumes))
+            }
+            logger.info(f"✅ Calculated volume histogram: {len(volumes)} particles, "
+                       f"range [{volume_histogram_data['min']}, {volume_histogram_data['max']}]")
+            
+            # 2. Calculate contact numbers directly from best_labels
+            # Import count_contacts function
+            from ..contact import count_contacts
+            
+            best_radius = summary.best_radius
+            logger.info(f"Calculating contact distribution for best radius r={best_radius}...")
+            
+            try:
+                # Calculate contacts directly from labels using the same connectivity as optimization
+                contact_counts_dict = count_contacts(labels, connectivity=self.connectivity)
+                
+                # Extract just the counts (values) for histogram
+                contact_counts = list(contact_counts_dict.values())
+                
+                if len(contact_counts) > 0:
+                    contact_histogram_data = {
+                        'values': contact_counts,
+                        'min': int(np.min(contact_counts)),
+                        'max': int(np.max(contact_counts)),
+                        'mean': float(np.mean(contact_counts)),
+                        'median': float(np.median(contact_counts))
+                    }
+                    logger.info(f"✅ Calculated contact histogram: {len(contact_counts)} particles, "
+                               f"range [{contact_histogram_data['min']}, {contact_histogram_data['max']}], "
+                               f"mean={contact_histogram_data['mean']:.2f}")
+                else:
+                    logger.warning("No contact data calculated")
+            except Exception as e:
+                logger.error(f"Failed to calculate contacts: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        except Exception as e:
+            logger.error(f"Failed to calculate histogram data: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return contact_histogram_data, volume_histogram_data
 
 __all__ = ["OptimizationWorker"] 

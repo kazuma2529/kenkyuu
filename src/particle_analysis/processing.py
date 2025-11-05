@@ -87,16 +87,32 @@ def load_and_binarize_3d_volume(
             if (i + 1) % 50 == 0 or i == z_slices - 1:
                 logger.info(f"Loaded {i + 1}/{z_slices} images...")
     
-    # Step 4: 3D Otsu thresholding (single threshold for entire volume)
-    with Timer("3D Otsu thresholding"):
-        threshold = threshold_otsu(volume)
-        logger.info(f"Otsu threshold: {threshold} (dtype: {dtype}, range: {volume.min()}-{volume.max()})")
+    # Step 4: 2-stage 3D Otsu thresholding (following sakai_code approach)
+    # This is crucial for CT data with wide dynamic range
+    with Timer("2-stage 3D Otsu thresholding"):
+        # Stage 1: First Otsu on entire volume (separates background from potential foreground)
+        threshold1 = threshold_otsu(volume)
+        logger.info(f"Stage 1 Otsu threshold: {threshold1} (dtype: {dtype}, range: {volume.min()}-{volume.max()})")
+        
+        # Extract voxels above first threshold
+        above_threshold1 = volume > threshold1
+        foreground_voxels = volume[above_threshold1]
+        
+        if len(foreground_voxels) == 0:
+            logger.warning("No voxels above first threshold! Using single-stage Otsu")
+            threshold2 = threshold1
+        else:
+            # Stage 2: Second Otsu on extracted foreground region (refines particle separation)
+            threshold2 = threshold_otsu(foreground_voxels)
+            logger.info(f"Stage 2 Otsu threshold: {threshold2} (on foreground range: {foreground_voxels.min()}-{foreground_voxels.max()})")
+        
+        logger.info(f"Final threshold: {threshold2}")
     
     # Step 5: Automatic polarity detection
     with Timer("Automatic polarity detection"):
-        # Calculate mean intensity on each side of threshold
-        below_threshold = volume <= threshold
-        above_threshold = volume > threshold
+        # Calculate statistics on each side of final threshold
+        below_threshold = volume <= threshold2
+        above_threshold = volume > threshold2
         
         mean_below = volume[below_threshold].mean() if below_threshold.any() else 0
         mean_above = volume[above_threshold].mean() if above_threshold.any() else 0
@@ -107,17 +123,21 @@ def load_and_binarize_3d_volume(
         logger.info(f"Below threshold: mean={mean_below:.1f}, count={count_below:,}")
         logger.info(f"Above threshold: mean={mean_above:.1f}, count={count_above:,}")
         
-        # Determine polarity:
-        # If mean_above < mean_below, foreground is darker → use volume < threshold
-        # Otherwise, foreground is brighter → use volume > threshold
-        if mean_above < mean_below:
-            binary_volume = volume < threshold
-            polarity = "inverted (foreground is darker)"
-            logger.info("✓ Detected polarity: Foreground is DARKER (inverted)")
+        # Determine polarity based on which side has fewer voxels
+        # Particles are typically the minority phase in CT scans
+        # The side with FEWER voxels is likely the foreground (particles)
+        if count_below < count_above:
+            # Fewer voxels below threshold → particles are below threshold
+            binary_volume = volume <= threshold2
+            polarity = "inverted (foreground is darker/below threshold)"
+            logger.info(f"✓ Detected polarity: Foreground is BELOW threshold (inverted)")
+            logger.info(f"   Minority phase: {count_below:,} voxels ({count_below/volume.size:.2%})")
         else:
-            binary_volume = volume > threshold
-            polarity = "normal (foreground is brighter)"
-            logger.info("✓ Detected polarity: Foreground is BRIGHTER (normal)")
+            # Fewer voxels above threshold → particles are above threshold
+            binary_volume = volume > threshold2
+            polarity = "normal (foreground is brighter/above threshold)"
+            logger.info(f"✓ Detected polarity: Foreground is ABOVE threshold (normal)")
+            logger.info(f"   Minority phase: {count_above:,} voxels ({count_above/volume.size:.2%})")
     
     # Step 6: Post-processing
     foreground_before = binary_volume.sum()
@@ -151,7 +171,9 @@ def load_and_binarize_3d_volume(
         'num_images': z_slices,
         'volume_shape': binary_volume.shape,
         'original_dtype': str(dtype),
-        'threshold': float(threshold),
+        'threshold': float(threshold2),  # Final threshold after 2-stage Otsu
+        'threshold_stage1': float(threshold1),  # First stage threshold
+        'threshold_stage2': float(threshold2),  # Second stage threshold
         'polarity': polarity,
         'foreground_voxels': int(foreground_after),
         'foreground_ratio': float(foreground_ratio),
