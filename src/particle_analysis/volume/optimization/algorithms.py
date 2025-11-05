@@ -141,16 +141,18 @@ def determine_best_radius_pareto_distance(
         vi_vals: List[float] = []
         if idx - 1 >= 0:
             try:
-                a = load_labels(results[idx - 1].labels_path)
-                b = load_labels(r.labels_path)
-                vi_vals.append(calculate_variation_of_information(a, b))
+                if results[idx - 1].labels_path and r.labels_path:
+                    a = load_labels(results[idx - 1].labels_path)
+                    b = load_labels(r.labels_path)
+                    vi_vals.append(calculate_variation_of_information(a, b))
             except Exception:
                 pass
         if idx + 1 < len(results):
             try:
-                a = load_labels(r.labels_path)
-                b = load_labels(results[idx + 1].labels_path)
-                vi_vals.append(calculate_variation_of_information(a, b))
+                if r.labels_path and results[idx + 1].labels_path:
+                    a = load_labels(r.labels_path)
+                    b = load_labels(results[idx + 1].labels_path)
+                    vi_vals.append(calculate_variation_of_information(a, b))
             except Exception:
                 pass
         instabilities.append(float(np.mean(vi_vals)) if vi_vals else 0.0)

@@ -127,14 +127,14 @@ def optimize_radius_advanced(
 
         processing_time = time.time() - step_start_time
 
-        # Create result
+        # Create result (labels_path is empty since we don't save intermediate files)
         result = OptimizationResult(
             radius=r,
             particle_count=num_particles,
             mean_contacts=mean_contacts,
             largest_particle_ratio=largest_ratio,
             processing_time=processing_time,
-            labels_path=str(label_path),
+            labels_path="",  # Empty for in-memory processing (only selected radius is saved)
             total_volume=total_vol,
             largest_particle_volume=largest_vol
         )
