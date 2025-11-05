@@ -161,34 +161,44 @@ kenkyuu/
 
 ### ステップ 2.5: 🎯 最適パラメータの自動決定（GUI）
 
-**目的**: 最良の分割結果を得るための半径 `r` を自動選択する
+**目的**: 多目的最適化を用いず、最小ルールで「未分割排除・過分割抑制・物理整合」を同時に満たす半径 `r` を自動選択します。
 
-**処理内容**:
+**決定規則（2 段＋物理チェック）**
 
-1. **複数半径の試行**: 指定された範囲（例: 1, 2, 3, ..., 10）の各 `r` で粒子分割を実行
-2. **評価指標の計算**: 各 `r` について以下の指標を計算:
-   - **粒子数**: 検出された粒子の総数
-   - **最大粒子の体積比**: 最大粒子が全体に占める割合（小さいほど良い）
-   - **平均接触数**: 各粒子の平均接触数（物理的妥当性の指標）
-   - **HHI 支配性指標**: 粒子サイズ分布の不平等度（小さいほど良い）
-   - **膝点距離**: 粒子数カーブの「曲がり角」からの距離（過分割を防ぐ）
-   - **VI 安定性**: 隣接する `r` 間の情報理論的距離（小さいほど安定）
-3. **Pareto 最適化**: 3 つの目的関数（HHI、膝点距離、VI 安定性）を同時に最小化
-4. **最適半径の選定**: Pareto 非支配解から正規化距離が最小の解を選択
+1. 未分割の排除（ハード制約）
 
-**実装**: `volume/optimizer.py` の `optimize_radius_advanced()` 関数
+- 最小 `r` から走査し、`largest_particle_ratio(r) ≤ τratio` を初めて満たす `r` を `r*` とする。
+- 既定値: `τratio = 0.05`
+
+2. 限界効用＋物理レンジ（`r ≥ r*`）
+
+- `Δcount(r) = particle_count(r) − particle_count(r−1)`
+- `Δcount(r) ≤ τgain` かつ `mean_contacts(r) ∈ [cmin, cmax]` を同時に初めて満たす `r` を採択。
+- 既定値: `τgain = 0.3% × particle_count(r*)`、`[cmin, cmax] = [4, 10]`
+
+フォールバック順序
+
+- (1) 上記の同時成立 `r`
+- (2) 物理レンジのみ満たす最初の `r`
+- (3) `r*`
+- (4) いずれも不可 → 最大 `r`
+
+オプション
+
+- 段差対策に移動平均（幅=1–2）を判定にのみ適用可（GUI 設定）。
+
+可視化
+
+- 2 本の折れ線（`particle_count`, `largest_particle_ratio`）＋採択 `r` の縦線、`τratio` の水平線。
+
+**実装**: `src/particle_analysis/volume/optimizer.py` の `optimize_radius_advanced()`（内部で `select_radius_by_constraints` を使用）
 
 **入力**: `volume.npy`  
 **出力**:
 
 - `labels_r1.npy`, `labels_r2.npy`, ... （各半径でのラベルデータ）
-- `optimization_results.csv` （各 `r` の評価指標）
+- `optimization_results.csv` （列: `radius, particle_count, largest_particle_ratio, mean_contacts`）
 - 最適な `labels_r*.npy` が選択される
-
-**技術的な詳細**:
-
-- 文献ベースの多目的最適化手法（Pareto + 距離最小化）を使用
-- 重み付けに依存しない客観的な指標のみを使用
 
 ### ステップ 3: 🔗 接触解析
 

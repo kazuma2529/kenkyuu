@@ -80,6 +80,18 @@ Initial analysis revealed severe particle under-splitting:
 
 ### Implementation
 
+#### Selection Method Update (2025-11)
+
+Pareto/膝点/VI による多目的最適化を廃止し、以下の最小ルールに移行：
+
+1) 未分割ハード制約: `largest_particle_ratio(r) ≤ 0.05` を初めて満たす `r*` を決定。
+2) 限界効用＋物理レンジ（`r ≥ r*`）: `Δcount(r) ≤ 0.3% × particle_count(r*)` かつ `mean_contacts(r) ∈ [4,10]` を同時に初めて満たす `r` を採択。
+3) フォールバック: (同時成立) → (物理のみ) → (`r*`) → (最大 `r`)。
+
+GUIでは `τratio`, `τgain(%)`, `[cmin,cmax]`, `smoothing_window` を設定可能。デフォルトは `0.05`, `0.30%`, `[4,10]`, `None`。
+
+可視化は `particle_count` と `largest_particle_ratio` の2系列折れ線＋採択 `r` の縦線、`τratio` の水平線を表示。
+
 #### Configuration Updates
 
 1. **Default Parameter Change**:

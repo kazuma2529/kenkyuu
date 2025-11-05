@@ -19,13 +19,14 @@ logging.basicConfig(
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QSpinBox, QProgressBar,
-    QFileDialog, QTextEdit, QGroupBox, QTabWidget, QMessageBox
+    QFileDialog, QTextEdit, QGroupBox, QTabWidget, QMessageBox,
+    QScrollArea, QSizePolicy
 )
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QFont
 
 from .workers import OptimizationWorker
-from .widgets import ResultsTable, ResultsPlotter, MplWidget, HistogramPlotter
+from .widgets import ResultsTable, ResultsPlotter, MplWidget, HistogramPlotter, OptimizationCurvesPlot
 from .launcher import _ensure_gui_available
 from .pipeline_handler import PipelineHandler
 from .config import (
@@ -78,9 +79,15 @@ class ParticleAnalysisGUI(QWidget):
         main_layout.addWidget(progress_section, 1)
         
         # === Bottom Section: Advanced Settings (collapsible) ===
-        self.advanced_section = self.create_advanced_section()
-        self.advanced_section.setVisible(False)  # Hidden by default
-        main_layout.addWidget(self.advanced_section)
+        # Advanced section wrapped by a scroll area to avoid cramped layout
+        self.advanced_container = QScrollArea()
+        self.advanced_container.setWidgetResizable(True)
+        self.advanced_container.setVisible(False)
+        advanced_inner = self.create_advanced_section()
+        self.advanced_container.setWidget(advanced_inner)
+        self.advanced_container.setMinimumHeight(280)
+        self.advanced_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        main_layout.addWidget(self.advanced_container)
         
         # Initialize default values
         self.max_radius_spinbox.setValue(DEFAULT_MAX_RADIUS)
@@ -220,6 +227,10 @@ class ParticleAnalysisGUI(QWidget):
         self.results_table = ResultsTable()
         self.results_tabs.addTab(self.results_table, "📊 Optimization Progress")
         
+        # Tab 1.5: Optimization Curves (particle_count & largest_particle_ratio)
+        self.opt_curves_widget = OptimizationCurvesPlot()
+        self.results_tabs.addTab(self.opt_curves_widget, "📈 Optimization Curves")
+
         # Tab 2: Contact Number Distribution Histogram
         self.contact_histogram_widget = MplWidget()
         self.contact_histogram_widget.setMinimumHeight(400)
@@ -276,10 +287,15 @@ class ParticleAnalysisGUI(QWidget):
         """Create advanced settings section (hidden by default)."""
         group = QGroupBox("⚙️ Advanced Settings")
         layout = QVBoxLayout(group)
+        layout.setSpacing(16)
+        layout.setContentsMargins(16, 16, 16, 16)
         
         # Erosion Radius Range
         radius_widget = QWidget()
         radius_layout = QGridLayout(radius_widget)
+        radius_layout.setHorizontalSpacing(12)
+        radius_layout.setVerticalSpacing(8)
+        radius_layout.setContentsMargins(0, 0, 0, 0)
         
         radius_label = QLabel("Erosion Radius Range:")
         radius_label.setStyleSheet("font-weight: bold;")
@@ -304,6 +320,9 @@ class ParticleAnalysisGUI(QWidget):
         
         contact_widget = QWidget()
         contact_layout = QGridLayout(contact_widget)
+        contact_layout.setHorizontalSpacing(12)
+        contact_layout.setVerticalSpacing(8)
+        contact_layout.setContentsMargins(0, 0, 0, 0)
         
         contact_label = QLabel("Contact Analysis Method:")
         contact_label.setStyleSheet("font-weight: bold;")
@@ -332,7 +351,78 @@ class ParticleAnalysisGUI(QWidget):
         # Connect signal to update description
         self.connectivity_combo.currentIndexChanged.connect(self.update_connectivity_description)
         
+        # Make value column stretch to keep labels compact
+        contact_layout.setColumnStretch(0, 0)
+        contact_layout.setColumnStretch(1, 1)
         layout.addWidget(contact_widget)
+
+        # Constraint-based selection parameters
+        params_widget = QWidget()
+        params_layout = QGridLayout(params_widget)
+        params_layout.setHorizontalSpacing(12)
+        params_layout.setVerticalSpacing(8)
+        params_layout.setContentsMargins(0, 0, 0, 0)
+
+        params_title = QLabel("Constraint-based Selection Parameters:")
+        params_title.setStyleSheet("font-weight: bold;")
+        params_layout.addWidget(params_title, 0, 0, 1, 2)
+
+        # tau_ratio (largest_particle_ratio threshold)
+        from qtpy.QtWidgets import QDoubleSpinBox
+        params_layout.addWidget(QLabel("τratio (largest particle ratio):"), 1, 0)
+        self.tau_ratio_spin = QDoubleSpinBox()
+        self.tau_ratio_spin.setRange(0.0, 1.0)
+        self.tau_ratio_spin.setSingleStep(0.01)
+        self.tau_ratio_spin.setDecimals(3)
+        self.tau_ratio_spin.setValue(0.05)
+        self.tau_ratio_spin.setToolTip("Threshold for largest_particle_ratio (default 0.05)")
+        self.tau_ratio_spin.setMaximumWidth(160)
+        params_layout.addWidget(self.tau_ratio_spin, 1, 1)
+
+        # tau_gain (relative %, e.g., 0.3%)
+        params_layout.addWidget(QLabel("τgain (% of base count):"), 2, 0)
+        self.tau_gain_percent_spin = QDoubleSpinBox()
+        self.tau_gain_percent_spin.setRange(0.0, 5.0)
+        self.tau_gain_percent_spin.setSingleStep(0.1)
+        self.tau_gain_percent_spin.setDecimals(2)
+        self.tau_gain_percent_spin.setValue(0.30)
+        self.tau_gain_percent_spin.setToolTip("Relative threshold as percent of base count (default 0.30%)")
+        self.tau_gain_percent_spin.setMaximumWidth(160)
+        params_layout.addWidget(self.tau_gain_percent_spin, 2, 1)
+
+        # contacts range [cmin, cmax]
+        params_layout.addWidget(QLabel("Mean contacts range [min, max]:"), 3, 0)
+        range_box = QWidget()
+        range_layout = QHBoxLayout(range_box)
+        range_layout.setContentsMargins(0, 0, 0, 0)
+        range_layout.setSpacing(8)
+        self.contacts_min_spin = QSpinBox()
+        self.contacts_min_spin.setRange(0, 50)
+        self.contacts_min_spin.setValue(4)
+        self.contacts_max_spin = QSpinBox()
+        self.contacts_max_spin.setRange(1, 100)
+        self.contacts_max_spin.setValue(10)
+        self.contacts_min_spin.setMaximumWidth(100)
+        self.contacts_max_spin.setMaximumWidth(100)
+        range_layout.addWidget(self.contacts_min_spin)
+        range_layout.addWidget(QLabel("to"))
+        range_layout.addWidget(self.contacts_max_spin)
+        params_layout.addWidget(range_box, 3, 1)
+
+        # smoothing window (None/1/2)
+        params_layout.addWidget(QLabel("Smoothing window (moving average):"), 4, 0)
+        self.smoothing_combo = QComboBox()
+        self.smoothing_combo.addItem("None", None)
+        self.smoothing_combo.addItem("1", 1)
+        self.smoothing_combo.addItem("2", 2)
+        self.smoothing_combo.setCurrentIndex(0)
+        params_layout.addWidget(self.smoothing_combo, 4, 1)
+
+        # Stretch columns so inputs have space
+        params_layout.setColumnStretch(0, 0)
+        params_layout.setColumnStretch(1, 1)
+
+        layout.addWidget(params_widget)
         
         # Info Label
         info_label = QLabel(
@@ -348,11 +438,11 @@ class ParticleAnalysisGUI(QWidget):
     
     def toggle_advanced_settings(self):
         """Toggle visibility of advanced settings section."""
-        is_visible = self.advanced_section.isVisible()
-        self.advanced_section.setVisible(not is_visible)
+        is_visible = self.advanced_container.isVisible()
+        self.advanced_container.setVisible(not is_visible)
         
         # Update button text
-        if self.advanced_section.isVisible():
+        if self.advanced_container.isVisible():
             self.advanced_toggle_btn.setText("⚙️ Hide Advanced Settings")
         else:
             self.advanced_toggle_btn.setText("⚙️ Advanced Settings")
@@ -499,6 +589,12 @@ class ParticleAnalysisGUI(QWidget):
             # Start optimization worker
             radii = list(range(1, self.max_radius_spinbox.value() + 1))
             connectivity = self.connectivity_combo.currentData()  # Get selected connectivity (6 or 26)
+            # Read selector params from UI
+            tau_ratio = float(self.tau_ratio_spin.value())
+            tau_gain_rel = float(self.tau_gain_percent_spin.value()) / 100.0
+            cmin = int(self.contacts_min_spin.value())
+            cmax = int(self.contacts_max_spin.value())
+            smoothing_window = self.smoothing_combo.currentData()
             
             logger.info(f"Starting optimization with connectivity={connectivity}")
             
@@ -506,7 +602,11 @@ class ParticleAnalysisGUI(QWidget):
                 vol_path=str(volume_path),
                 output_dir=str(self.output_dir),
                 radii=radii,
-                connectivity=connectivity
+                connectivity=connectivity,
+                tau_ratio=tau_ratio,
+                tau_gain_rel=tau_gain_rel,
+                contacts_range=(cmin, cmax),
+                smoothing_window=smoothing_window
             )
             
             # Connect worker signals
@@ -639,19 +739,23 @@ class ParticleAnalysisGUI(QWidget):
             # Add largest particle ratio to results
             largest_ratio = getattr(best_result, 'largest_particle_ratio', 0.0)
             
+            # Plot optimization curves (uses GUI params for thresholds)
+            try:
+                tau_ratio = float(self.tau_ratio_spin.value())
+            except Exception:
+                tau_ratio = 0.05
+            self.opt_curves_widget.plot(summary.results, selected_radius=summary.best_radius, tau_ratio=tau_ratio)
+
             results_text = f"""🎯 OPTIMAL RADIUS: r = {summary.best_radius}
 
-📊 Pareto+Distance Results:
+📊 Constraint-based Selection:
 • Particles: {best_result.particle_count:,}
 • Mean Contacts: {best_result.mean_contacts:.1f}
 • Largest Particle: {largest_ratio * 100:.1f}%
-• HHI Dominance: {best_metrics['hhi']:.3f}
-• Knee Distance: {best_metrics['knee_dist']:.1f}
-• VI Stability: {best_metrics['vi_stability']:.3f}
 
 🔗 Contact Method: {connectivity_name}
 ✅ Optimization: {summary.optimization_method}
-🔬 Explanation: Selected via Pareto optimality and distance minimization
+🔬 Explanation: Selected via HardConstraint + MarginalGain + ContactsRange
 
 📁 Saved Results:
 {csv_exists} CSV: optimization_results.csv
@@ -659,8 +763,8 @@ class ParticleAnalysisGUI(QWidget):
 {csv_exists} Best Labels: best_labels.npy
 📂 Location: {self.output_dir}
 
-💡 Click "🔍 View 3D Results" to visualize in Napari
-💡 View "📊 Contact Distribution" and "📊 Volume Distribution" tabs for research insights
+💡 See "📈 Optimization Curves" for particle_count and largest_ratio trends
+💡 View "📊 Contact Distribution" and "📊 Volume Distribution" for insights
 """
             self.final_results_text.setText(results_text)
         

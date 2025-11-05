@@ -59,8 +59,8 @@ class ResultsTable(QTableWidget):
     def setup_table(self):
         """Setup table headers and formatting."""
         headers = [
-            "Radius", "Particles", "Mean Contacts", "Largest Particle (%)", 
-            "HHI", "Knee Dist", "VI Stability", "Processing Time (s)", "Status"
+            "Radius", "Particles", "Mean Contacts", "Largest Particle (%)",
+            "Processing Time (s)", "Status"
         ]
         self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
@@ -70,11 +70,8 @@ class ResultsTable(QTableWidget):
         self.setColumnWidth(1, 80)   # Particles
         self.setColumnWidth(2, 110)  # Mean Contacts
         self.setColumnWidth(3, 130)  # Largest Particle (%)
-        self.setColumnWidth(4, 80)   # HHI
-        self.setColumnWidth(5, 80)   # Knee Distance
-        self.setColumnWidth(6, 90)   # VI Stability
-        self.setColumnWidth(7, 130)  # Processing Time
-        self.setColumnWidth(8, 100)  # Status
+        self.setColumnWidth(4, 130)  # Processing Time
+        self.setColumnWidth(5, 100)  # Status
         
         # Enable selection
         self.setSelectionBehavior(QTableWidget.SelectRows)
@@ -85,10 +82,6 @@ class ResultsTable(QTableWidget):
         row = self.rowCount()
         self.insertRow(row)
         
-        # Default metrics if not provided
-        if new_metrics is None:
-            new_metrics = {'hhi': 0.0, 'knee_dist': 0.0, 'vi_stability': 0.0}
-        
         # Get largest_particle_ratio (default to 0.0 if not available)
         largest_ratio = getattr(result, 'largest_particle_ratio', 0.0)
         
@@ -97,20 +90,13 @@ class ResultsTable(QTableWidget):
         self.setItem(row, 1, QTableWidgetItem(str(result.particle_count)))
         self.setItem(row, 2, QTableWidgetItem(f"{result.mean_contacts:.1f}"))
         self.setItem(row, 3, QTableWidgetItem(f"{largest_ratio * 100:.1f}"))  # Convert to percentage
-        self.setItem(row, 4, QTableWidgetItem(f"{new_metrics.get('hhi', 0.0):.3f}"))
-        self.setItem(row, 5, QTableWidgetItem(f"{new_metrics.get('knee_dist', 0.0):.1f}"))
-        self.setItem(row, 6, QTableWidgetItem(f"{new_metrics.get('vi_stability', 0.0):.3f}"))
-        self.setItem(row, 7, QTableWidgetItem(f"{result.processing_time:.1f}"))
+        self.setItem(row, 4, QTableWidgetItem(f"{result.processing_time:.1f}"))
         
-        # Status (now column 8)
+        # Status (now last column)
         if is_best:
-            self.setItem(row, 8, QTableWidgetItem("★ OPTIMAL"))
-        elif new_metrics.get('hhi', 1.0) > 0.5:
-            self.setItem(row, 8, QTableWidgetItem("Under-segmented"))
-        elif new_metrics.get('hhi', 0.0) < 0.01:
-            self.setItem(row, 8, QTableWidgetItem("Well-segmented"))
+            self.setItem(row, 5, QTableWidgetItem("★ OPTIMAL"))
         else:
-            self.setItem(row, 8, QTableWidgetItem("Partial"))
+            self.setItem(row, 5, QTableWidgetItem("Computed"))
         
         # Highlight best result
         if is_best:
@@ -449,3 +435,56 @@ class HistogramPlotter:
 
 
 __all__ = ["MplWidget", "ResultsTable", "ResultsPlotter", "HistogramPlotter"] 
+
+
+class OptimizationCurvesPlot(MplWidget):
+    """Simple 2-panel plot: particle_count and largest_particle_ratio vs radius.
+    Shows a vertical line at selected radius and a horizontal line at τratio on the ratio panel.
+    """
+
+    def plot(self, results: list, selected_radius: int | None = None, tau_ratio: float | None = None):
+        self.clear()
+        if not results:
+            return
+
+        ax1 = self.figure.add_subplot(2, 1, 1)
+        ax2 = self.figure.add_subplot(2, 1, 2)
+
+        radii = [r.radius for r in results]
+        counts = [r.particle_count for r in results]
+        lpr = [getattr(r, 'largest_particle_ratio', 0.0) for r in results]
+
+        # Panel 1: particle_count
+        ax1.plot(radii, counts, 'o-', color='#5a9bd3', label='particle_count')
+        ax1.set_title('Particle Count vs Radius', color='white')
+        ax1.set_xlabel('Radius', color='white')
+        ax1.set_ylabel('Particle Count', color='white')
+        ax1.grid(True, alpha=0.3, color='white')
+
+        # Panel 2: largest_particle_ratio
+        ax2.plot(radii, lpr, 'o-', color='#d9534f', label='largest_particle_ratio')
+        ax2.set_title('Largest Particle Ratio vs Radius', color='white')
+        ax2.set_xlabel('Radius', color='white')
+        ax2.set_ylabel('Largest Ratio', color='white')
+        ax2.grid(True, alpha=0.3, color='white')
+        if tau_ratio is not None:
+            ax2.axhline(y=float(tau_ratio), color='orange', linestyle='--', alpha=0.8, label=f'τratio={float(tau_ratio):.3f}')
+
+        # Vertical line at selected radius
+        if selected_radius is not None:
+            for ax in (ax1, ax2):
+                ax.axvline(x=int(selected_radius), color='white', linestyle=':', alpha=0.8, label=f'r*={selected_radius}')
+
+        # Dark theme ticks/spines
+        for ax in (ax1, ax2):
+            ax.set_facecolor('#2c313a')
+            for side in ('bottom', 'top', 'left', 'right'):
+                ax.spines[side].set_color('white')
+            ax.tick_params(colors='white')
+            ax.legend(facecolor='#23272e', edgecolor='white', fontsize=9)
+
+        self.figure.tight_layout()
+        self.canvas.draw()
+
+
+__all__.append("OptimizationCurvesPlot")

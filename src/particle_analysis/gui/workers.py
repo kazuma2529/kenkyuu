@@ -30,12 +30,18 @@ class OptimizationWorker(QThread):
     progress_percentage_updated = pyqtSignal(int)  # Progress bar value (0-100)
     stage_changed = pyqtSignal(str)  # Processing stage (e.g., "watershed", "contacts", "optimization")
     
-    def __init__(self, vol_path: str, output_dir: str, radii: List[int], connectivity: int = 6):
+    def __init__(self, vol_path: str, output_dir: str, radii: List[int], connectivity: int = 6,
+                 tau_ratio: float = 0.05, tau_gain_rel: float = 0.003,
+                 contacts_range: tuple[int, int] = (4, 10), smoothing_window: int | None = None):
         super().__init__()
         self.vol_path = vol_path
         self.output_dir = output_dir
         self.radii = radii
         self.connectivity = connectivity
+        self.tau_ratio = tau_ratio
+        self.tau_gain_rel = tau_gain_rel
+        self.contacts_range = contacts_range
+        self.smoothing_window = smoothing_window
         self.is_cancelled = False
         self.total_steps = len(radii) if radii else 1  # For percentage calculation
     
@@ -82,7 +88,11 @@ class OptimizationWorker(QThread):
                 connectivity=self.connectivity,
                 progress_callback=progress_callback,
                 complete_analysis=True,
-                early_stopping=False
+                early_stopping=False,
+                tau_ratio=self.tau_ratio,
+                tau_gain_rel=self.tau_gain_rel,
+                contacts_range=self.contacts_range,
+                smoothing_window=self.smoothing_window,
             )
             
             logger.info(f"Optimization completed. Summary: {summary}")
