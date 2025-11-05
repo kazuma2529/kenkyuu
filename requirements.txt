@@ -11,6 +11,10 @@ napari>=0.4.15  # For interactive visualization
 pyyaml>=6.0     # For YAML configuration files
 pytest>=7.0.0   # For running tests
 
+# GUI dependencies
+qtpy>=2.0.0     # Qt abstraction layer for GUI
+PySide6>=6.5.0  # Modern Qt backend for GUI
+
 # Development dependencies
 black>=22.0.0   # Code formatting
 flake8>=4.0.0   # Code linting 

@@ -90,7 +90,7 @@ def get_connectivity_structure(connectivity: int) -> np.ndarray:
     """Get 3D connectivity structure for ndimage operations.
     
     Args:
-        connectivity: 6, 18, or 26
+        connectivity: 6 or 26
         
     Returns:
         3D structure array
@@ -100,9 +100,9 @@ def get_connectivity_structure(connectivity: int) -> np.ndarray:
     """
     from scipy import ndimage
     
-    connectivity_map = {6: 1, 18: 2, 26: 3}
+    connectivity_map = {6: 1, 26: 3}
     if connectivity not in connectivity_map:
-        raise ValueError(f"Connectivity must be 6, 18, or 26, got {connectivity}")
+        raise ValueError(f"Connectivity must be 6 or 26, got {connectivity}")
     
     return ndimage.generate_binary_structure(3, connectivity_map[connectivity])
 
