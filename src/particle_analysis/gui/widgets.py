@@ -9,10 +9,12 @@ from typing import List, Dict, Optional
 
 import numpy as np
 from qtpy.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QLabel
+from qtpy.QtWidgets import QHeaderView
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QColor
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from .plot_utils import robust_upper_bound, style_dark_axes, set_legend_white
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +67,26 @@ class ResultsTable(QTableWidget):
         self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
         
-        # Set column widths
-        self.setColumnWidth(0, 60)   # Radius
-        self.setColumnWidth(1, 80)   # Particles
-        self.setColumnWidth(2, 110)  # Mean Contacts
-        self.setColumnWidth(3, 130)  # Largest Particle (%)
-        self.setColumnWidth(4, 130)  # Processing Time
-        self.setColumnWidth(5, 100)  # Status
+        # Header resize policy: important columns fit contents, Status fixed
+        header = self.horizontalHeader()
+        # Make all columns comfortably wide by default; allow user resize interactively
+        header.setSectionResizeMode(0, QHeaderView.Fixed)        # Radius (fixed narrower width)
+        header.setSectionResizeMode(1, QHeaderView.Interactive)  # Particles
+        header.setSectionResizeMode(2, QHeaderView.Interactive)  # Mean Contacts
+        header.setSectionResizeMode(3, QHeaderView.Interactive)  # Largest Particle (%)
+        header.setSectionResizeMode(4, QHeaderView.Interactive)  # Processing Time (s)
+        header.setSectionResizeMode(5, QHeaderView.Interactive)  # Status
+        header.setMinimumSectionSize(200)
+
+        # Minimal widths so header textsとデータが切れないように初期幅を広めに確保
+        self.setMinimumWidth(1450)
+        default_w = 230
+        self.setColumnWidth(0, 110)        # Radius
+        self.setColumnWidth(1, default_w)  # Particles
+        self.setColumnWidth(2, default_w)  # Mean Contacts
+        self.setColumnWidth(3, default_w)  # Largest Particle (%)
+        self.setColumnWidth(4, default_w)  # Processing Time (s)
+        self.setColumnWidth(5, default_w)  # Status
         
         # Enable selection
         self.setSelectionBehavior(QTableWidget.SelectRows)
@@ -299,12 +314,15 @@ class HistogramPlotter:
             min_contact = int(min(values))
             max_contact = int(max(values))
             
-            # Calculate appropriate bin range
-            # Use integer bins for contact counts (each bin represents one contact number)
-            bin_range = range(min_contact, max_contact + 2)  # +2 to include max value
-            
+            # Auto scale X upper bound using robust percentile to avoid heavy outliers
+            upper = robust_upper_bound(values, 99.5, 1.05)
+            x_upper = max(10, min(max_contact, int(upper) + 1))
+
+            # Integer bins for contact counts
+            bin_range = range(min_contact, x_upper + 1)
+
             # Plot histogram with proper binning
-            n, bins, patches = ax.hist(values, bins=bin_range, 
+            n, bins, patches = ax.hist(values, bins=bin_range,
                                       color='#5a9bd3', edgecolor='white', alpha=0.8)
             
             # Add mean and median lines
@@ -331,7 +349,8 @@ class HistogramPlotter:
             ax.set_xlabel('Number of Contacts per Particle', fontsize=12, color='white')
             ax.set_ylabel('Frequency (Particle Count)', fontsize=12, color='white')
             ax.set_title('Contact Number Distribution', fontsize=14, fontweight='bold', color='white')
-            ax.legend(facecolor='#23272e', edgecolor='white', fontsize=10)
+            leg = ax.legend(facecolor='#23272e', edgecolor='white', fontsize=10)
+            set_legend_white(leg)
             ax.grid(True, alpha=0.3, color='white')
             
             # Set integer ticks on X-axis for better readability
@@ -345,12 +364,7 @@ class HistogramPlotter:
             ax.set_xticks(range(0, x_max + 1, tick_step))
             
             # Dark theme styling
-            ax.set_facecolor('#2c313a')
-            ax.spines['bottom'].set_color('white')
-            ax.spines['top'].set_color('white')
-            ax.spines['left'].set_color('white')
-            ax.spines['right'].set_color('white')
-            ax.tick_params(colors='white')
+            style_dark_axes(ax)
             
             mpl_widget.figure.tight_layout()
             mpl_widget.canvas.draw()
@@ -385,8 +399,9 @@ class HistogramPlotter:
             # Create subplot
             ax = mpl_widget.figure.add_subplot(111)
             
-            # Plot histogram with logarithmic bins for better visualization
             values = volume_data['values']
+            # Robust X upper bound using percentile (handles huge outliers)
+            x_upper = robust_upper_bound(values, 99.0, 1.05)
             ax.hist(values, bins=50, color='#d9534f', edgecolor='white', alpha=0.8)
             
             # Add mean and median lines
@@ -402,16 +417,19 @@ class HistogramPlotter:
             ax.set_xlabel('Particle Volume (voxels)', fontsize=12, color='white')
             ax.set_ylabel('Frequency (Particle Count)', fontsize=12, color='white')
             ax.set_title('Particle Volume Distribution', fontsize=14, fontweight='bold', color='white')
-            ax.legend(facecolor='#23272e', edgecolor='white', fontsize=10)
+            leg = ax.legend(facecolor='#23272e', edgecolor='white', fontsize=10)
+            set_legend_white(leg)
             ax.grid(True, alpha=0.3, color='white')
             
             # Dark theme styling
-            ax.set_facecolor('#2c313a')
-            ax.spines['bottom'].set_color('white')
-            ax.spines['top'].set_color('white')
-            ax.spines['left'].set_color('white')
-            ax.spines['right'].set_color('white')
-            ax.tick_params(colors='white')
+            style_dark_axes(ax)
+
+            # Apply xlim using robust bound if it improves readability
+            try:
+                if x_upper > 0:
+                    ax.set_xlim(0, x_upper)
+            except Exception:
+                pass
             
             # Add statistics text
             stats_text = (
@@ -434,57 +452,4 @@ class HistogramPlotter:
             traceback.print_exc()
 
 
-__all__ = ["MplWidget", "ResultsTable", "ResultsPlotter", "HistogramPlotter"] 
-
-
-class OptimizationCurvesPlot(MplWidget):
-    """Simple 2-panel plot: particle_count and largest_particle_ratio vs radius.
-    Shows a vertical line at selected radius and a horizontal line at τratio on the ratio panel.
-    """
-
-    def plot(self, results: list, selected_radius: int | None = None, tau_ratio: float | None = None):
-        self.clear()
-        if not results:
-            return
-
-        ax1 = self.figure.add_subplot(2, 1, 1)
-        ax2 = self.figure.add_subplot(2, 1, 2)
-
-        radii = [r.radius for r in results]
-        counts = [r.particle_count for r in results]
-        lpr = [getattr(r, 'largest_particle_ratio', 0.0) for r in results]
-
-        # Panel 1: particle_count
-        ax1.plot(radii, counts, 'o-', color='#5a9bd3', label='particle_count')
-        ax1.set_title('Particle Count vs Radius', color='white')
-        ax1.set_xlabel('Radius', color='white')
-        ax1.set_ylabel('Particle Count', color='white')
-        ax1.grid(True, alpha=0.3, color='white')
-
-        # Panel 2: largest_particle_ratio
-        ax2.plot(radii, lpr, 'o-', color='#d9534f', label='largest_particle_ratio')
-        ax2.set_title('Largest Particle Ratio vs Radius', color='white')
-        ax2.set_xlabel('Radius', color='white')
-        ax2.set_ylabel('Largest Ratio', color='white')
-        ax2.grid(True, alpha=0.3, color='white')
-        if tau_ratio is not None:
-            ax2.axhline(y=float(tau_ratio), color='orange', linestyle='--', alpha=0.8, label=f'τratio={float(tau_ratio):.3f}')
-
-        # Vertical line at selected radius
-        if selected_radius is not None:
-            for ax in (ax1, ax2):
-                ax.axvline(x=int(selected_radius), color='white', linestyle=':', alpha=0.8, label=f'r*={selected_radius}')
-
-        # Dark theme ticks/spines
-        for ax in (ax1, ax2):
-            ax.set_facecolor('#2c313a')
-            for side in ('bottom', 'top', 'left', 'right'):
-                ax.spines[side].set_color('white')
-            ax.tick_params(colors='white')
-            ax.legend(facecolor='#23272e', edgecolor='white', fontsize=9)
-
-        self.figure.tight_layout()
-        self.canvas.draw()
-
-
-__all__.append("OptimizationCurvesPlot")
+__all__ = ["MplWidget", "ResultsTable", "ResultsPlotter", "HistogramPlotter"]

@@ -19,7 +19,7 @@ except Exception:  # pandas は実行環境により未導入の場合がある�
     pd = None  # type: ignore
 
 from .data_structures import OptimizationResult, OptimizationSummary
-from .core import split_particles
+from .core import split_particles_in_memory
 from .metrics.basic import calculate_largest_particle_ratio
 from .optimization.algorithms import (
     determine_best_radius_advanced,
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def optimize_radius_advanced(
-    vol_path: str,
+    vol_path: str | None,
     output_dir: str,
     radii: List[int],
     connectivity: int = 6,
@@ -43,6 +43,8 @@ def optimize_radius_advanced(
     tau_gain_rel: float = 0.003,
     contacts_range: tuple[int, int] = (4, 10),
     smoothing_window: Optional[int] = None,
+    *,
+    volume: Optional[np.ndarray] = None,
 ) -> OptimizationSummary:
     """Advanced radius optimization with comprehensive analysis.
 
@@ -70,29 +72,21 @@ def optimize_radius_advanced(
 
     logger.info(f"Starting advanced radius optimization for radii: {radii}")
 
+    # Load volume if only vol_path was provided
+    if volume is None:
+        if vol_path is None:
+            raise ValueError("Either `volume` or `vol_path` must be provided")
+        volume = np.load(str(vol_path)).astype(bool)
+
     for i, r in enumerate(radii):
         step_start_time = time.time()
 
-        # File paths
-        label_path = output_dir / f"labels_r{r}.npy"
-        
-        # Check for cached results
-        if label_path.exists():
-            logger.debug(f"Re-using cached labels for radius {r}")
-            labels = np.load(label_path)
-            num_particles = int(labels.max())
-        else:
-            # Run particle splitting
-            logger.info(f"Processing radius {r} ({i+1}/{len(radii)})...")
-            num_particles = split_particles(
-                vol_path=str(vol_path),
-                out_labels=str(label_path),
-                radius=r,
-                connectivity=connectivity,
-            )
-        
+        # Run particle splitting in-memory
+        logger.info(f"Processing radius {r} ({i+1}/{len(radii)})...")
+        labels = split_particles_in_memory(volume, radius=r, connectivity=connectivity)
+        num_particles = int(labels.max())
+
         # Calculate additional metrics
-        labels = np.load(label_path)
         largest_ratio, largest_vol, total_vol = calculate_largest_particle_ratio(labels)
 
         # Calculate mean contacts if requested
@@ -194,6 +188,30 @@ def optimize_radius_advanced(
 
     logger.info(f"Optimization completed in {summary.total_processing_time:.1f}s")
     logger.info(explanation)
+
+    # Save optimization_results.csv
+    try:
+        if pd is None:
+            logger.warning("pandas not available; skipping optimization_results.csv save")
+        else:
+            df = _summary_to_dataframe(summary)
+            (output_dir / "").mkdir(parents=True, exist_ok=True)
+            df.to_csv(output_dir / "optimization_results.csv", index=False)
+            logger.info("Saved optimization_results.csv")
+    except Exception as e:
+        logger.warning(f"Failed to save optimization_results.csv: {e}")
+
+    # Save only the selected labels to disk
+    try:
+        sel_r = int(summary.best_radius)
+        logger.info(f"Saving labels for selected radius r={sel_r}")
+        sel_labels = None
+        # Recompute labels for selected radius to avoid keeping all in memory
+        sel_labels = split_particles_in_memory(volume, radius=sel_r, connectivity=connectivity)
+        np.save(output_dir / f"labels_r{sel_r}.npy", sel_labels.astype(np.int32))
+        logger.info(f"Saved labels_r{sel_r}.npy")
+    except Exception as e:
+        logger.error(f"Failed to save selected labels: {e}")
 
     return summary
 

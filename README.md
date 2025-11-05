@@ -292,17 +292,16 @@ CLI は廃止し、GUI からのみ実行します。
 
 解析が完了すると、`output/run_YYYY_MM_DD_HHMM/` フォルダに以下のファイルが生成されます：
 
-### 主要な出力ファイル
+### 主要な出力ファイル（厳選された 4 成果物のみ）
 
-| ファイル名                            | 説明                                        | 形式       |
-| ------------------------------------- | ------------------------------------------- | ---------- |
-| `volume.npy`                          | 3D ボリュームデータ（二値化済み）           | NumPy 配列 |
-| `labels_r5.npy`                       | ラベル付き粒子データ（例: `r=5` の場合）    | NumPy 配列 |
-| `labels_r1.npy`, `labels_r2.npy`, ... | 各半径 `r` でのラベルデータ（自動最適化時） | NumPy 配列 |
-| `contact_counts.csv`                  | 各粒子の接触数                              | CSV        |
-| `contacts_summary.csv`                | 統計サマリー（平均、中央値、最大値など）    | CSV        |
-| `hist_contacts.png`                   | 接触数分布のヒストグラム                    | PNG 画像   |
-| `optimization_results.csv`            | 最適化結果（各 `r` の評価指標）             | CSV        |
+| ファイル名                 | 説明                                             | 形式       |
+| -------------------------- | ------------------------------------------------ | ---------- |
+| `contact_counts.csv`       | 各粒子の接触数                                   | CSV        |
+| `contacts_summary.csv`     | 統計サマリー（平均、中央値、最大値など）         | CSV        |
+| `optimization_results.csv` | 最適化結果（各 `r` の評価指標）                  | CSV        |
+| `labels_r{selected}.npy`   | 採択された半径に対応するラベル付き粒子データのみ | NumPy 配列 |
+
+注意: `volume.npy`、未選択の `labels_r*.npy`、`hist_contacts.png` は保存しません。
 
 ### ファイルの見方
 

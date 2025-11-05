@@ -29,34 +29,19 @@ class PipelineHandler:
     # Method A (per-slice processing) removed; GUI uses 3D binarization directly.
     
     def create_volume_from_3d_binarization(
-        self, 
-        ct_folder_path: str, 
+        self,
+        ct_folder_path: str,
         progress_callback=None
-    ) -> Tuple[Path, Dict]:
-        """Create 3D volume using high-precision 3D Otsu binarization.
-        
-        This method implements M2 from APP_IMPLEMENTATION_PLAN.md:
-        - 3D Otsu on uint16 data (no downscaling)
-        - Automatic polarity detection
-        - Morphological post-processing
-        
-        Args:
-            ct_folder_path: Path to folder containing CT TIF images
-            progress_callback: Optional callback for progress updates
-            
-        Returns:
-            Tuple[Path, Dict]: (volume_path, info_dict) with binarization info
-            
-        Raises:
-            ValueError: If volume creation fails
+    ) -> Tuple[np.ndarray, Dict]:
+        """Create 3D volume using high-precision 3D Otsu binarization (in-memory).
+
+        Returns the binary volume and info dict without saving to disk.
         """
         from ..processing import load_and_binarize_3d_volume
         
         if progress_callback:
             progress_callback("Loading images and performing 3D Otsu binarization...")
-        
-        volume_path = self.output_dir / "volume.npy"
-        
+
         try:
             # High-precision 3D binarization
             binary_volume, info = load_and_binarize_3d_volume(
@@ -66,15 +51,12 @@ class PipelineHandler:
                 return_info=True
             )
             
-            # Save binary volume
-            np.save(str(volume_path), binary_volume)
-            
-            logger.info(f"Created 3D volume: {volume_path}")
+            logger.info("Created 3D volume in memory (not saved to disk)")
             logger.info(f"Volume shape: {binary_volume.shape}")
             logger.info(f"Foreground ratio: {info['foreground_ratio']:.2%}")
             logger.info(f"Polarity: {info['polarity']}")
             
-            return volume_path, info
+            return binary_volume, info
             
         except Exception as e:
             logger.error(f"Failed to create 3D volume: {e}")
@@ -85,7 +67,7 @@ class PipelineHandler:
     # No masks directory anymore (GUI does not generate per-slice masks)
     
     def get_volume_path(self) -> Path:
-        """Get the volume file path."""
+        """Deprecated: volume is no longer saved to disk."""
         return self.output_dir / "volume.npy"
 
 

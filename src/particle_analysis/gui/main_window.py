@@ -26,7 +26,7 @@ from qtpy.QtCore import Qt
 from qtpy.QtGui import QFont
 
 from .workers import OptimizationWorker
-from .widgets import ResultsTable, ResultsPlotter, MplWidget, HistogramPlotter, OptimizationCurvesPlot
+from .widgets import ResultsTable, ResultsPlotter, MplWidget, HistogramPlotter
 from .launcher import _ensure_gui_available
 from .pipeline_handler import PipelineHandler
 from .config import (
@@ -210,7 +210,7 @@ class ParticleAnalysisGUI(QWidget):
         self.progress_bar.setVisible(False)
         self.progress_bar.setMinimumHeight(30)
         
-        self.cancel_btn = QPushButton("❌ Cancel")
+        self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setObjectName("cancelButton")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.setMaximumWidth(120)
@@ -227,10 +227,8 @@ class ParticleAnalysisGUI(QWidget):
         self.results_table = ResultsTable()
         self.results_tabs.addTab(self.results_table, "📊 Optimization Progress")
         
-        # Tab 1.5: Optimization Curves (particle_count & largest_particle_ratio)
-        self.opt_curves_widget = OptimizationCurvesPlot()
-        self.results_tabs.addTab(self.opt_curves_widget, "📈 Optimization Curves")
-
+        # Removed Optimization Curves tab per design
+        
         # Tab 2: Contact Number Distribution Histogram
         self.contact_histogram_widget = MplWidget()
         self.contact_histogram_widget.setMinimumHeight(400)
@@ -568,7 +566,7 @@ class ParticleAnalysisGUI(QWidget):
             logger.info(f"CT folder: {self.ct_folder_path}")
             logger.info("=" * 70)
             
-            volume_path, binarization_info = self.pipeline_handler.create_volume_from_3d_binarization(
+            binary_volume, binarization_info = self.pipeline_handler.create_volume_from_3d_binarization(
                 ct_folder_path=self.ct_folder_path,
                 progress_callback=self.status_label.setText
             )
@@ -599,7 +597,7 @@ class ParticleAnalysisGUI(QWidget):
             logger.info(f"Starting optimization with connectivity={connectivity}")
             
             self.optimization_worker = OptimizationWorker(
-                vol_path=str(volume_path),
+                volume=binary_volume,
                 output_dir=str(self.output_dir),
                 radii=radii,
                 connectivity=connectivity,
@@ -735,17 +733,12 @@ class ParticleAnalysisGUI(QWidget):
             # Get output directory info
             csv_path = self.output_dir / "optimization_results.csv"
             csv_exists = "✅" if csv_path.exists() else "❌"
+            labels_path = self.output_dir / f"labels_r{summary.best_radius}.npy"
+            labels_exists = "✅" if labels_path.exists() else "❌"
             
             # Add largest particle ratio to results
             largest_ratio = getattr(best_result, 'largest_particle_ratio', 0.0)
             
-            # Plot optimization curves (uses GUI params for thresholds)
-            try:
-                tau_ratio = float(self.tau_ratio_spin.value())
-            except Exception:
-                tau_ratio = 0.05
-            self.opt_curves_widget.plot(summary.results, selected_radius=summary.best_radius, tau_ratio=tau_ratio)
-
             results_text = f"""🎯 OPTIMAL RADIUS: r = {summary.best_radius}
 
 📊 Constraint-based Selection:
@@ -759,11 +752,9 @@ class ParticleAnalysisGUI(QWidget):
 
 📁 Saved Results:
 {csv_exists} CSV: optimization_results.csv
-{csv_exists} Summary: optimization_summary.txt
-{csv_exists} Best Labels: best_labels.npy
+{labels_exists} Labels: labels_r{summary.best_radius}.npy
 📂 Location: {self.output_dir}
 
-💡 See "📈 Optimization Curves" for particle_count and largest_ratio trends
 💡 View "📊 Contact Distribution" and "📊 Volume Distribution" for insights
 """
             self.final_results_text.setText(results_text)
@@ -841,8 +832,7 @@ class ParticleAnalysisGUI(QWidget):
                 )
                 return
             
-            # Use NapariViewerManager to load best labels
-            volume_path = self.output_dir / "volume.npy"
+            # Use NapariViewerManager to load best labels (no volume background)
             best_r = self.optimization_summary.best_radius
             best_result = self.optimization_summary.get_result_by_radius(best_r)
             
@@ -850,14 +840,13 @@ class ParticleAnalysisGUI(QWidget):
             metadata = {
                 'Best Radius': best_r,
                 'Particle Count': best_result.particle_count,
-                'Mean Contacts': f"{best_result.mean_contacts:.2f}",
-                'Status': best_result.status
+                'Mean Contacts': f"{best_result.mean_contacts:.2f}"
             }
             
             # Use manager to open viewer
             self.napari_manager.load_best_labels(
                 best_labels_path=best_labels_path,
-                volume_path=volume_path if volume_path.exists() else None,
+                volume_path=None,
                 best_radius=best_r,
                 metadata=metadata
             )
@@ -891,51 +880,31 @@ class ParticleAnalysisGUI(QWidget):
             QMessageBox.warning(self, "Warning", "No analysis results available.")
             return
         
-        # Try to load best labels first
-        best_labels_path = self.output_dir / "best_labels.npy"
+        # Load selected radius labels
+        if not self.optimization_summary:
+            QMessageBox.warning(self, "Warning", "No optimization summary available.")
+            return
+        best_r = self.optimization_summary.best_radius
+        best_labels_path = self.output_dir / f"labels_r{best_r}.npy"
         if best_labels_path.exists():
             self.load_best_labels_in_napari(best_labels_path)
         else:
-            # Fallback to loading all radii
-            logger.warning("best_labels.npy not found, loading all radii instead")
-            self.load_3d_results()  # Load all radii as fallback
+            QMessageBox.warning(self, "Warning", f"labels_r{best_r}.npy not found.")
     
     def load_3d_results(self, radius: int = None):
-        """Load 3D results for specific radius or all radii."""
+        """Load 3D results for specific radius (labels only)."""
         try:
-            volume_path = self.output_dir / "volume.npy"
-            
-            if not volume_path.exists():
-                QMessageBox.warning(self, "Warning", "Volume file not found.")
-                return
-            
-            if not NAPARI_AVAILABLE:
-                QMessageBox.warning(
-                    self, 
-                    "Napari Not Available", 
-                    "Napari is not installed.\n\n"
-                    "Install it with:\n"
-                    "pip install napari[all]"
-                )
-                return
-            
-            # Get list of radii from optimization summary
             if not self.optimization_summary:
                 QMessageBox.warning(self, "Warning", "No optimization results available.")
                 return
             
-            radii = [result.radius for result in self.optimization_summary.results]
-            best_radius = self.optimization_summary.best_radius
-            
-            # Use NapariViewerManager to load all radii
-            self.napari_manager.load_all_radii(
-                output_dir=self.output_dir,
-                volume_path=volume_path,
-                radii=radii,
-                best_radius=best_radius
-            )
-            
-            logger.info(f"✅ Loaded {len(radii)} radius results in Napari")
+            # Load selected or best radius labels
+            selected_radius = radius if radius is not None else self.optimization_summary.best_radius
+            labels_path = self.output_dir / f"labels_r{selected_radius}.npy"
+            if labels_path.exists():
+                self.load_best_labels_in_napari(labels_path)
+            else:
+                QMessageBox.warning(self, "Warning", f"labels_r{selected_radius}.npy not found.")
             
         except Exception as e:
             QMessageBox.critical(self, "3D Viewer Error", f"Failed to load 3D results:\n\n{str(e)}")

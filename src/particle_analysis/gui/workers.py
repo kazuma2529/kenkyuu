@@ -30,11 +30,11 @@ class OptimizationWorker(QThread):
     progress_percentage_updated = pyqtSignal(int)  # Progress bar value (0-100)
     stage_changed = pyqtSignal(str)  # Processing stage (e.g., "watershed", "contacts", "optimization")
     
-    def __init__(self, vol_path: str, output_dir: str, radii: List[int], connectivity: int = 6,
+    def __init__(self, volume: np.ndarray, output_dir: str, radii: List[int], connectivity: int = 6,
                  tau_ratio: float = 0.05, tau_gain_rel: float = 0.003,
                  contacts_range: tuple[int, int] = (4, 10), smoothing_window: int | None = None):
         super().__init__()
-        self.vol_path = vol_path
+        self.volume = volume
         self.output_dir = output_dir
         self.radii = radii
         self.connectivity = connectivity
@@ -82,7 +82,7 @@ class OptimizationWorker(QThread):
             
             self.stage_changed.emit("optimization")
             summary = optimize_radius_advanced(
-                vol_path=self.vol_path,
+                vol_path=None,
                 output_dir=self.output_dir,
                 radii=self.radii,
                 connectivity=self.connectivity,
@@ -93,6 +93,7 @@ class OptimizationWorker(QThread):
                 tau_gain_rel=self.tau_gain_rel,
                 contacts_range=self.contacts_range,
                 smoothing_window=self.smoothing_window,
+                volume=self.volume,
             )
             
             logger.info(f"Optimization completed. Summary: {summary}")
@@ -105,15 +106,7 @@ class OptimizationWorker(QThread):
                 self.progress_text_updated.emit("最適rを選定中...")
                 self.progress_percentage_updated.emit(95)
                 
-                # NEW: Save results to CSV and best labels (M6)
-                logger.info("Saving results to CSV and best labels...")
-                try:
-                    self._save_results(summary)
-                    logger.info("Results saved successfully")
-                except Exception as e:
-                    logger.error(f"Failed to save results: {e}")
-                    import traceback
-                    traceback.print_exc()
+                # Results are saved within optimizer (optimization_results.csv and labels_r{best}.npy)
                 
                 # Calculate histogram data for final visualization
                 logger.info("Calculating histogram data for visualization...")
@@ -141,75 +134,8 @@ class OptimizationWorker(QThread):
         self.terminate()
     
     def _save_results(self, summary):
-        """Save optimization results to CSV and best labels to file.
-        
-        This implements M6 from APP_IMPLEMENTATION_PLAN.md:
-        - Save detailed CSV with all radii results
-        - Save best labels for 3D visualization
-        
-        Args:
-            summary: OptimizationSummary with all results
-        """
-        output_dir = Path(self.output_dir)
-        
-        # 1. Create results DataFrame
-        results_data = []
-        for result in summary.results:
-            results_data.append({
-                'radius': result.radius,
-                'particle_count': result.particle_count,
-                'mean_contacts': result.mean_contacts,
-                'largest_particle_ratio': result.largest_particle_ratio,
-                'processing_time_sec': result.processing_time,
-                'total_volume': result.total_volume,
-                'largest_particle_volume': result.largest_particle_volume,
-            })
-        
-        df = pd.DataFrame(results_data)
-        
-        # Add summary info
-        df.attrs['best_radius'] = summary.best_radius
-        df.attrs['optimization_method'] = summary.optimization_method
-        df.attrs['total_processing_time'] = summary.total_processing_time
-        
-        # Save to CSV
-        csv_path = output_dir / "optimization_results.csv"
-        df.to_csv(csv_path, index=False)
-        logger.info(f"✅ Saved results CSV: {csv_path}")
-        
-        # Also save summary info to separate file
-        summary_path = output_dir / "optimization_summary.txt"
-        with open(summary_path, 'w', encoding='utf-8') as f:
-            f.write(f"Optimization Summary\n")
-            f.write(f"{'=' * 50}\n\n")
-            f.write(f"Best Radius: {summary.best_radius}\n")
-            f.write(f"Optimization Method: {summary.optimization_method}\n")
-            f.write(f"Total Processing Time: {summary.total_processing_time:.2f}s\n")
-            f.write(f"Radii Tested: {len(summary.results)}\n\n")
-            
-            best_result = summary.get_result_by_radius(summary.best_radius)
-            if best_result:
-                f.write(f"Best Result (r={summary.best_radius}):\n")
-                f.write(f"  Particles: {best_result.particle_count}\n")
-                f.write(f"  Mean Contacts: {best_result.mean_contacts:.2f}\n")
-                f.write(f"  Largest Particle Ratio: {best_result.largest_particle_ratio:.3f}\n")
-        
-        logger.info(f"✅ Saved summary text: {summary_path}")
-        
-        # 2. Save best labels for 3D visualization
-        best_labels_src = output_dir / f"labels_r{summary.best_radius}.npy"
-        best_labels_dst = output_dir / "best_labels.npy"
-        
-        if best_labels_src.exists():
-            # Copy or create symlink
-            labels = np.load(best_labels_src)
-            np.save(best_labels_dst, labels)
-            logger.info(f"✅ Saved best labels: {best_labels_dst}")
-            logger.info(f"   Best radius: r={summary.best_radius}")
-            logger.info(f"   Labels shape: {labels.shape}")
-            logger.info(f"   Unique particles: {labels.max()}")
-        else:
-            logger.warning(f"⚠️ Best labels file not found: {best_labels_src}")
+        """Deprecated: Results are saved by optimizer. No action required."""
+        logger.info("Skipping _save_results; handled by optimizer")
     
     def _calculate_histogram_data(self, summary):
         """Calculate histogram data for final visualization.
@@ -226,7 +152,7 @@ class OptimizationWorker(QThread):
                    Each is a dict with 'values' and 'bins' keys, or None if calculation fails
         """
         output_dir = Path(self.output_dir)
-        best_labels_path = output_dir / "best_labels.npy"
+        best_labels_path = output_dir / f"labels_r{summary.best_radius}.npy"
         
         contact_histogram_data = None
         volume_histogram_data = None
@@ -236,7 +162,7 @@ class OptimizationWorker(QThread):
                 logger.warning(f"Best labels not found at {best_labels_path}, cannot calculate histogram data")
                 return contact_histogram_data, volume_histogram_data
             
-            # Load best labels
+            # Load selected labels
             labels = np.load(best_labels_path)
             logger.info(f"Loaded best labels for histogram calculation: {labels.shape}, {labels.max()} particles")
             

@@ -18,55 +18,59 @@ logger = logging.getLogger(__name__)
 
 
 def split_particles(
-    vol_path: str, 
-    out_labels: str, 
-    radius: int = 2, 
+    vol_path: str,
+    out_labels: str,
+    radius: int = 2,
     connectivity: int = 6
 ) -> int:
-    """Split touching particles using erosion-watershed algorithm.
-    
+    """Split touching particles using erosion-watershed algorithm (legacy file-based API).
+
+    Note: This function remains for backward compatibility but should not be used
+    in the GUI pipeline. Prefer `split_particles_in_memory` for in-memory processing.
+    """
+    volume = np.load(vol_path).astype(bool)
+    labels = split_particles_in_memory(volume, radius=radius, connectivity=connectivity)
+    np.save(out_labels, labels)
+    num_particles = int(labels.max())
+    logger.info(f"Particle splitting complete: {num_particles} particles (saved to {out_labels})")
+    return num_particles
+
+
+def split_particles_in_memory(
+    volume: np.ndarray,
+    *,
+    radius: int = 2,
+    connectivity: int = 6,
+) -> np.ndarray:
+    """Split touching particles using erosion-watershed algorithm (in-memory).
+
     Args:
-        vol_path: Input volume (.npy file)
-        out_labels: Output labeled volume (.npy file)
+        volume: Binary 3D volume (bool or int) with shape (Z, Y, X)
         radius: Erosion radius (structuring element size)
         connectivity: Connectivity for connected components (6 or 26)
-    
+
     Returns:
-        int: Number of particles found
+        Labeled volume as np.int32 with labels in [0..N]
     """
-    # Load volume
-    volume = np.load(vol_path).astype(bool)
-    logger.info(f"Loaded volume: {vol_path} (shape={volume.shape})")
-    
-    # Create erosion structuring element
+    volume = volume.astype(bool)
+
     struct_elem = ball(radius)
     logger.debug(f"Using ball structuring element with radius={radius}")
-    
-    # Erode to separate touching particles
+
     eroded = ndimage.binary_erosion(volume, structure=struct_elem)
-    
+
     # Label eroded components as seeds
     seed_labels, n_seeds = ndimage.label(eroded, structure=np.ones((3, 3, 3)))
     logger.info(f"Found {n_seeds} seed regions after erosion")
-    
+
     if n_seeds == 0:
-        logger.warning("No seeds found after erosion - creating single label")
-        labels = volume.astype(np.int32)
-        np.save(out_labels, labels)
-        return int(volume.any())
-    
+        logger.warning("No seeds found after erosion - returning binary as single component labels")
+        return volume.astype(np.int32)
+
     # Use watershed to grow seeds back to original boundaries
     distance = ndimage.distance_transform_edt(volume)
     labels = watershed(-distance, seed_labels, mask=volume)
-    
-    # Convert to appropriate dtype and save
-    labels = labels.astype(np.int32)
-    np.save(out_labels, labels)
-    
-    num_particles = int(labels.max())
-    logger.info(f"Particle splitting complete: {num_particles} particles")
-    
-    return num_particles
+    return labels.astype(np.int32)
 
 
 def label_volume(vol_path: str, out_labels: str, connectivity: int = 6) -> int:
@@ -103,4 +107,4 @@ def label_volume(vol_path: str, out_labels: str, connectivity: int = 6) -> int:
     
     return num_labels
 
-__all__ = ["split_particles", "label_volume"]
+__all__ = ["split_particles", "split_particles_in_memory", "label_volume"]
