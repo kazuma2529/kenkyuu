@@ -62,11 +62,18 @@ class OptimizationWorker(QThread):
                     progress_pct = int((current_index + 1) / self.total_steps * 90)
                     self.progress_percentage_updated.emit(progress_pct)
                     
-                    # Emit detailed progress text
-                    text = (
-                        f"r = {result.radius}: {result.particle_count} particles, "
-                        f"{result.mean_contacts:.1f} avg contacts"
-                    )
+                    # Emit detailed progress text (with guard volume info if available)
+                    if hasattr(result, 'interior_particle_count') and result.interior_particle_count > 0:
+                        text = (
+                            f"r = {result.radius}: {result.particle_count} particles "
+                            f"({result.interior_particle_count} interior, {result.excluded_particle_count} excluded), "
+                            f"{result.mean_contacts:.1f} avg contacts (interior only)"
+                        )
+                    else:
+                        text = (
+                            f"r = {result.radius}: {result.particle_count} particles, "
+                            f"{result.mean_contacts:.1f} avg contacts"
+                        )
                     self.progress_text_updated.emit(text)
                     
                     logger.info(f"Progress update: {text} ({progress_pct}%)")
@@ -190,19 +197,22 @@ class OptimizationWorker(QThread):
             logger.info(f"✅ Calculated volume histogram: {len(volumes)} particles, "
                        f"range [{volume_histogram_data['min']}, {volume_histogram_data['max']}]")
             
-            # 2. Calculate contact numbers directly from best_labels
-            # Import count_contacts function
-            from ..contact import count_contacts
+            # 2. Calculate contact numbers directly from best_labels (with guard volume)
+            # Import guard volume functions
+            from ..contact.guard_volume import count_contacts_with_guard
             
             best_radius = summary.best_radius
-            logger.info(f"Calculating contact distribution for best radius r={best_radius}...")
+            logger.info(f"Calculating contact distribution for best radius r={best_radius} (with guard volume)...")
             
             try:
-                # Calculate contacts directly from labels using the same connectivity as optimization
-                contact_counts_dict = count_contacts(labels, connectivity=self.connectivity)
+                # Calculate contacts with guard volume filtering (use interior particles only)
+                full_contacts, interior_contacts, guard_stats = count_contacts_with_guard(
+                    labels,
+                    connectivity=self.connectivity
+                )
                 
-                # Extract just the counts (values) for histogram
-                contact_counts = list(contact_counts_dict.values())
+                # Extract just the counts (values) for histogram (interior particles only)
+                contact_counts = list(interior_contacts.values())
                 
                 if len(contact_counts) > 0:
                     contact_histogram_data = {
@@ -212,9 +222,13 @@ class OptimizationWorker(QThread):
                         'mean': float(np.mean(contact_counts)),
                         'median': float(np.median(contact_counts))
                     }
-                    logger.info(f"✅ Calculated contact histogram: {len(contact_counts)} particles, "
-                               f"range [{contact_histogram_data['min']}, {contact_histogram_data['max']}], "
-                               f"mean={contact_histogram_data['mean']:.2f}")
+                    logger.info(
+                        f"✅ Calculated contact histogram (interior particles only): "
+                        f"{len(contact_counts)} particles "
+                        f"({guard_stats['excluded_particles']} boundary particles excluded), "
+                        f"range [{contact_histogram_data['min']}, {contact_histogram_data['max']}], "
+                        f"mean={contact_histogram_data['mean']:.2f}"
+                    )
                 else:
                     logger.warning("No contact data calculated")
             except Exception as e:

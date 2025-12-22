@@ -17,15 +17,23 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
-def count_contacts(labels: np.ndarray, connectivity: int = 26) -> Dict[int, int]:
+def count_contacts(
+    labels: np.ndarray,
+    connectivity: int = 26,
+    use_guard_volume: bool = False
+) -> Dict[int, int]:
     """Count contacts between particles in a 3D labeled volume.
     
     Args:
         labels: 3D labeled volume (particle IDs)
         connectivity: Neighborhood connectivity (6 or 26)
+        use_guard_volume: If True, exclude boundary particles from returned results
+                         (contacts are still counted for all particles, but only
+                         interior particles are included in the returned dict)
     
     Returns:
         Dict mapping particle_id -> contact_count
+        If use_guard_volume=True, only interior particles are included.
     """
     if connectivity == 6:
         # Face-connected neighbors (6 directions)
@@ -84,6 +92,29 @@ def count_contacts(labels: np.ndarray, connectivity: int = 26) -> Dict[int, int]
     
     # Convert sets to counts
     contact_counts = {pid: len(contact_set) for pid, contact_set in contacts.items()}
+    
+    # Apply guard volume filtering if requested
+    if use_guard_volume:
+        from .guard_volume import (
+            calculate_guard_margin,
+            create_guard_volume_mask,
+            filter_interior_particles
+        )
+        
+        margin = calculate_guard_margin(labels)
+        guard_mask = create_guard_volume_mask(labels.shape, margin)
+        interior_particles = filter_interior_particles(labels, guard_mask)
+        
+        # Filter to interior particles only
+        contact_counts = {
+            pid: count for pid, count in contact_counts.items()
+            if pid in interior_particles
+        }
+        
+        logger.info(
+            f"Guard volume filtering applied: {len(contact_counts)} interior particles "
+            f"out of {len(contacts)} total"
+        )
     
     return contact_counts
 

@@ -10,23 +10,22 @@ from typing import Optional
 
 import numpy as np
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(levelname)s:%(name)s: %(message)s'
-)
+from .utils import setup_gui_logging
+
+# Setup logging (only once, avoids duplicate configuration)
+setup_gui_logging()
 
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QSpinBox, QProgressBar,
     QFileDialog, QTextEdit, QGroupBox, QTabWidget, QMessageBox,
-    QScrollArea, QSizePolicy
+    QScrollArea, QSizePolicy, QComboBox
 )
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QFont
 
 from .workers import OptimizationWorker
-from .widgets import ResultsTable, ResultsPlotter, MplWidget, HistogramPlotter
+from .widgets import ResultsTable, MplWidget, HistogramPlotter
 from .launcher import _ensure_gui_available
 from .pipeline_handler import PipelineHandler
 from .config import (
@@ -38,6 +37,7 @@ from .config import (
 )
 from .metrics_calculator import MetricsCalculator
 from .napari_integration import NapariViewerManager, NAPARI_AVAILABLE
+from .utils import handle_napari_error, check_napari_available
 
 logger = logging.getLogger(__name__)
 
@@ -269,8 +269,14 @@ class ParticleAnalysisGUI(QWidget):
         self.view_3d_btn.setEnabled(False)
         self.view_3d_btn.setMinimumHeight(40)
         
+        self.view_3d_contacts_btn = QPushButton("🎨 View 3D (Color by Contacts)")
+        self.view_3d_contacts_btn.setObjectName("view3dContactsButton")
+        self.view_3d_contacts_btn.setEnabled(False)
+        self.view_3d_contacts_btn.setMinimumHeight(40)
+        
         final_results_layout.addWidget(self.final_results_text)
         final_results_layout.addWidget(self.view_3d_btn)
+        final_results_layout.addWidget(self.view_3d_contacts_btn)
         
         self.results_tabs.addTab(final_results_widget, "🎯 最終結果")
         
@@ -314,8 +320,6 @@ class ParticleAnalysisGUI(QWidget):
         layout.addWidget(radius_widget)
         
         # Contact Analysis Method
-        from qtpy.QtWidgets import QComboBox
-        
         contact_widget = QWidget()
         contact_layout = QGridLayout(contact_widget)
         contact_layout.setHorizontalSpacing(12)
@@ -466,6 +470,7 @@ class ParticleAnalysisGUI(QWidget):
         """Connect UI signals to methods."""
         self.select_folder_btn.clicked.connect(self.select_ct_folder)
         self.max_radius_spinbox.valueChanged.connect(self.update_radius_preview)
+        self.view_3d_contacts_btn.clicked.connect(self.view_3d_results_with_contacts)
         self.start_btn.clicked.connect(self.start_analysis)
         self.cancel_btn.clicked.connect(self.cancel_analysis)
         self.view_3d_btn.clicked.connect(self.view_3d_results)
@@ -784,6 +789,7 @@ class ParticleAnalysisGUI(QWidget):
         
         # Enable 3D viewing
         self.view_3d_btn.setEnabled(True)
+        self.view_3d_contacts_btn.setEnabled(True)
         
         # Clean up temporary results
         if hasattr(self, 'temp_results'):
@@ -821,17 +827,10 @@ class ParticleAnalysisGUI(QWidget):
         Args:
             best_labels_path: Path to best_labels.npy file
         """
+        if not check_napari_available(self):
+            return
+        
         try:
-            if not NAPARI_AVAILABLE:
-                QMessageBox.warning(
-                    self, 
-                    "Napari Not Available", 
-                    "Napari is not installed.\n\n"
-                    "Install it with:\n"
-                    "pip install napari[all]"
-                )
-                return
-            
             # Use NapariViewerManager to load best labels (no volume background)
             best_r = self.optimization_summary.best_radius
             best_result = self.optimization_summary.get_result_by_radius(best_r)
@@ -861,14 +860,7 @@ class ParticleAnalysisGUI(QWidget):
             )
             logger.error(f"File not found: {e}")
         except Exception as e:
-            QMessageBox.critical(
-                self, 
-                "Napari Error", 
-                f"Failed to open 3D viewer:\n\n{str(e)}"
-            )
-            logger.error(f"Napari error: {e}")
-            import traceback
-            traceback.print_exc()
+            handle_napari_error(self, e, "loading best labels")
     
     def view_3d_results(self):
         """Open 3D viewer with best optimization result.
@@ -890,6 +882,59 @@ class ParticleAnalysisGUI(QWidget):
             self.load_best_labels_in_napari(best_labels_path)
         else:
             QMessageBox.warning(self, "Warning", f"labels_r{best_r}.npy not found.")
+    
+    def view_3d_results_with_contacts(self):
+        """Open 3D viewer with contact count coloring.
+        
+        Shows particles colored by their contact count using discrete color scheme.
+        """
+        if not self.optimization_summary:
+            QMessageBox.warning(self, "Warning", "No analysis results available.")
+            return
+        
+        best_r = self.optimization_summary.best_radius
+        best_labels_path = self.output_dir / f"labels_r{best_r}.npy"
+        
+        if not best_labels_path.exists():
+            QMessageBox.warning(self, "Warning", f"labels_r{best_r}.npy not found.")
+            return
+        
+        if not check_napari_available(self):
+            return
+        
+        try:
+            # Get connectivity from optimization settings
+            connectivity = getattr(self, 'connectivity', 6)
+            
+            # Prepare metadata
+            best_result = self.optimization_summary.get_result_by_radius(best_r)
+            metadata = {
+                'Best Radius': best_r,
+                'Particle Count': best_result.particle_count,
+                'Mean Contacts': f"{best_result.mean_contacts:.2f}",
+                'Connectivity': connectivity
+            }
+            
+            # Use manager to open viewer with contact coloring
+            self.napari_manager.load_best_labels_with_contacts(
+                best_labels_path=best_labels_path,
+                connectivity=connectivity,
+                volume_path=None,
+                best_radius=best_r,
+                metadata=metadata
+            )
+            
+            logger.info("✅ Napari viewer opened with contact coloring")
+            
+        except FileNotFoundError as e:
+            QMessageBox.warning(
+                self, 
+                "File Not Found", 
+                f"Required file not found:\n{e}"
+            )
+            logger.error(f"File not found: {e}")
+        except Exception as e:
+            handle_napari_error(self, e, "contact coloring")
     
     def load_3d_results(self, radius: int = None):
         """Load 3D results for specific radius (labels only)."""

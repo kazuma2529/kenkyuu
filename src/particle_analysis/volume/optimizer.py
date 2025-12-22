@@ -89,24 +89,42 @@ def optimize_radius_advanced(
         # Calculate additional metrics
         largest_ratio, largest_vol, total_vol = calculate_largest_particle_ratio(labels)
 
-        # Calculate mean contacts if requested
+        # Calculate mean contacts if requested (with guard volume filtering)
         mean_contacts = 0.0
+        interior_particle_count = 0
+        mean_contacts_interior = 0.0
+        excluded_particle_count = 0
+        
         if complete_analysis and num_particles > 0:
             logger.info(f"Starting contact calculation for r={r} with {num_particles} particles using connectivity={connectivity}")
             try:
-                # Import from contact package
-                from ..contact import count_contacts
-                logger.info(f"Successfully imported count_contacts function")
+                # Import guard volume functions
+                from ..contact.guard_volume import count_contacts_with_guard
+                logger.info(f"Successfully imported count_contacts_with_guard function")
                 
-                # Use the connectivity parameter passed to optimize_radius_advanced
-                contacts_dict = count_contacts(labels, connectivity=connectivity)
+                # Count contacts with guard volume filtering
+                # This counts contacts for ALL particles, but filters statistics to interior only
+                full_contacts, interior_contacts, guard_stats = count_contacts_with_guard(
+                    labels,
+                    connectivity=connectivity
+                )
                 
-                if contacts_dict and len(contacts_dict) > 0:
-                    contact_values = list(contacts_dict.values())
-                    mean_contacts = np.mean(contact_values)
-                    logger.info(f"✅ Contact calculation successful for r={r}: {mean_contacts:.1f} (from {len(contact_values)} particles)")
+                # Use interior particles for mean contacts (primary metric)
+                if interior_contacts and len(interior_contacts) > 0:
+                    interior_contact_values = list(interior_contacts.values())
+                    mean_contacts_interior = np.mean(interior_contact_values)
+                    mean_contacts = mean_contacts_interior  # Use interior for primary metric
+                    
+                    interior_particle_count = guard_stats['interior_particles']
+                    excluded_particle_count = guard_stats['excluded_particles']
+                    
+                    logger.info(
+                        f"✅ Contact calculation successful for r={r}: "
+                        f"mean={mean_contacts:.1f} (interior particles only, "
+                        f"{interior_particle_count} interior / {guard_stats['total_particles']} total)"
+                    )
                 else:
-                    logger.warning(f"❌ No contacts returned for radius {r} (dict empty or None)")
+                    logger.warning(f"❌ No interior contacts returned for radius {r} (dict empty or None)")
                     mean_contacts = 0.0
                     
             except ImportError as e:
@@ -123,7 +141,7 @@ def optimize_radius_advanced(
             elif num_particles == 0:
                 logger.info(f"Skipping contact analysis for r={r} (no particles detected)")
                 
-        logger.info(f"Final mean_contacts for r={r}: {mean_contacts:.1f}")
+        logger.info(f"Final mean_contacts for r={r}: {mean_contacts:.1f} (interior particles only)")
 
         processing_time = time.time() - step_start_time
 
@@ -136,7 +154,10 @@ def optimize_radius_advanced(
             processing_time=processing_time,
             labels_path="",  # Empty for in-memory processing (only selected radius is saved)
             total_volume=total_vol,
-            largest_particle_volume=largest_vol
+            largest_particle_volume=largest_vol,
+            interior_particle_count=interior_particle_count,
+            mean_contacts_interior=mean_contacts_interior,
+            excluded_particle_count=excluded_particle_count
         )
 
         summary.add_result(result)
@@ -395,6 +416,9 @@ def _summary_to_dataframe(summary: "OptimizationSummary"):
             "particle_count": res.particle_count,
             "largest_particle_ratio": res.largest_particle_ratio,
             "mean_contacts": res.mean_contacts,
+            "interior_particle_count": res.interior_particle_count,
+            "mean_contacts_interior": res.mean_contacts_interior,
+            "excluded_particle_count": res.excluded_particle_count,
         })
     return pd.DataFrame(rows)
 
