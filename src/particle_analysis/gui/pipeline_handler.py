@@ -31,16 +31,18 @@ class PipelineHandler:
     def create_volume_from_3d_binarization(
         self,
         ct_folder_path: str,
-        progress_callback=None
+        progress_callback=None,
+        enable_clahe: bool = False,
+        threshold_method: str = "otsu"
     ) -> Tuple[np.ndarray, Dict]:
-        """Create 3D volume using high-precision 3D Otsu binarization (in-memory).
+        """Create 3D volume using high-precision 3D binarization (in-memory).
 
         Returns the binary volume and info dict without saving to disk.
         """
         from ..processing import load_and_binarize_3d_volume
         
         if progress_callback:
-            progress_callback("Loading images and performing 3D Otsu binarization...")
+            progress_callback(f"Loading images and performing 3D binarization ({threshold_method})...")
 
         try:
             # High-precision 3D binarization
@@ -48,13 +50,16 @@ class PipelineHandler:
                 ct_folder_path,
                 min_object_size=100,  # Remove small noise
                 closing_radius=0,     # No closing by default (can be adjusted)
-                return_info=True
+                return_info=True,
+                enable_clahe=enable_clahe,
+                threshold_method=threshold_method
             )
             
             logger.info("Created 3D volume in memory (not saved to disk)")
             logger.info(f"Volume shape: {binary_volume.shape}")
             logger.info(f"Foreground ratio: {info['foreground_ratio']:.2%}")
             logger.info(f"Polarity: {info['polarity']}")
+            logger.info(f"Method: {threshold_method}, CLAHE: {enable_clahe}")
             
             return binary_volume, info
             

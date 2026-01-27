@@ -19,7 +19,7 @@ from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QSpinBox, QProgressBar,
     QFileDialog, QTextEdit, QGroupBox, QTabWidget, QMessageBox,
-    QScrollArea, QSizePolicy, QComboBox
+    QScrollArea, QSizePolicy, QComboBox, QCheckBox
 )
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QFont
@@ -294,6 +294,39 @@ class ParticleAnalysisGUI(QWidget):
         layout.setSpacing(16)
         layout.setContentsMargins(16, 16, 16, 16)
         
+        # Binarization Settings (NEW)
+        bin_widget = QWidget()
+        bin_layout = QGridLayout(bin_widget)
+        bin_layout.setHorizontalSpacing(12)
+        bin_layout.setVerticalSpacing(8)
+        bin_layout.setContentsMargins(0, 0, 0, 0)
+        
+        bin_title = QLabel("Binarization Settings:")
+        bin_title.setStyleSheet("font-weight: bold;")
+        bin_layout.addWidget(bin_title, 0, 0, 1, 2)
+        
+        # CLAHE Checkbox
+        self.clahe_checkbox = QCheckBox("Enable CLAHE (Contrast Enhancement)")
+        self.clahe_checkbox.setToolTip("Apply Contrast Limited Adaptive Histogram Equalization.\nRecommended for low-contrast images.")
+        bin_layout.addWidget(self.clahe_checkbox, 1, 0, 1, 2)
+        
+        # Threshold Method
+        bin_layout.addWidget(QLabel("Threshold Method:"), 2, 0)
+        self.threshold_combo = QComboBox()
+        self.threshold_combo.addItem("Otsu (Standard)", "otsu")
+        self.threshold_combo.addItem("Triangle (Low Contrast)", "triangle")
+        self.threshold_combo.setToolTip(
+            "Otsu: Best for bimodal histograms (high contrast).\n"
+            "Triangle: Best for unimodal histograms (low contrast)."
+        )
+        bin_layout.addWidget(self.threshold_combo, 2, 1)
+        
+        # Stretch columns
+        bin_layout.setColumnStretch(0, 0)
+        bin_layout.setColumnStretch(1, 1)
+        
+        layout.addWidget(bin_widget)
+        
         # Erosion Radius Range
         radius_widget = QWidget()
         radius_layout = QGridLayout(radius_widget)
@@ -564,16 +597,23 @@ class ParticleAnalysisGUI(QWidget):
         
         # Process CT images through NEW high-precision 3D binarization pipeline
         try:
+            # Read binarization settings
+            enable_clahe = self.clahe_checkbox.isChecked()
+            threshold_method = self.threshold_combo.currentData()
+            
             # NEW: Direct 3D Otsu binarization (M2 implementation)
-            self.status_label.setText("Performing high-precision 3D Otsu binarization...")
+            self.status_label.setText(f"Performing 3D binarization ({threshold_method})...")
             logger.info("=" * 70)
             logger.info("Starting NEW 3D binarization pipeline (M2)")
             logger.info(f"CT folder: {self.ct_folder_path}")
+            logger.info(f"Method: {threshold_method}, CLAHE: {enable_clahe}")
             logger.info("=" * 70)
             
             binary_volume, binarization_info = self.pipeline_handler.create_volume_from_3d_binarization(
                 ct_folder_path=self.ct_folder_path,
-                progress_callback=self.status_label.setText
+                progress_callback=self.status_label.setText,
+                enable_clahe=enable_clahe,
+                threshold_method=threshold_method
             )
             
             # Log binarization info
