@@ -55,7 +55,8 @@ def load_and_binarize_3d_volume(
     closing_radius: int = 0,
     return_info: bool = False,
     enable_clahe: bool = False,
-    threshold_method: Literal["otsu", "triangle"] = "otsu"
+    threshold_method: Literal["otsu", "triangle"] = "otsu",
+    backend: Literal["cpu", "gpu"] = "cpu",
 ) -> np.ndarray:
     """Load TIF images and perform high-precision 3D binarization.
     
@@ -80,7 +81,11 @@ def load_and_binarize_3d_volume(
         
     Raises:
         ValueError: If no valid images found or loading fails
+    backend:
+        "cpu" または "gpu"（現時点では "cpu" のみ実装。"gpu" は将来の拡張用）
     """
+    if backend not in ("cpu", "gpu"):
+        raise ValueError(f"Unsupported backend: {backend}")
     folder = Path(folder_path)
     if not folder.exists():
         raise ValueError(f"Folder does not exist: {folder_path}")

@@ -11,6 +11,8 @@ from scipy import ndimage
 from skimage.segmentation import watershed
 from skimage.morphology import ball
 
+from .gpu_backend import binary_erosion_gpu, distance_transform_edt_gpu
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,6 +43,7 @@ def split_particles_in_memory(
     *,
     radius: int = 2,
     connectivity: int = 6,
+    backend: str = "cpu",
 ) -> np.ndarray:
     """Split touching particles using erosion-watershed algorithm (in-memory).
 
@@ -48,16 +51,26 @@ def split_particles_in_memory(
         volume: Binary 3D volume (bool or int) with shape (Z, Y, X)
         radius: Erosion radius (structuring element size)
         connectivity: Connectivity for connected components (6 or 26)
+        backend: "cpu" または "gpu"（現時点では "cpu" のみ実装。"gpu" は将来の拡張用）
 
     Returns:
         Labeled volume as np.int32 with labels in [0..N]
     """
+    if backend not in ("cpu", "gpu"):
+        raise ValueError(f"Unsupported backend: {backend}")
+
     volume = volume.astype(bool)
 
     struct_elem = ball(radius)
     logger.debug(f"Using ball structuring element with radius={radius}")
 
-    eroded = ndimage.binary_erosion(volume, structure=struct_elem)
+    if backend == "cpu":
+        eroded = ndimage.binary_erosion(volume, structure=struct_elem)
+        distance = ndimage.distance_transform_edt(volume)
+    else:  # backend == "gpu"
+        logger.info("Using GPU backend for erosion + distance transform")
+        eroded = binary_erosion_gpu(volume, struct_elem)
+        distance = distance_transform_edt_gpu(volume)
 
     # Label eroded components as seeds
     seed_labels, n_seeds = ndimage.label(eroded, structure=np.ones((3, 3, 3)))
@@ -68,7 +81,6 @@ def split_particles_in_memory(
         return volume.astype(np.int32)
 
     # Use watershed to grow seeds back to original boundaries
-    distance = ndimage.distance_transform_edt(volume)
     labels = watershed(-distance, seed_labels, mask=volume)
     return labels.astype(np.int32)
 
