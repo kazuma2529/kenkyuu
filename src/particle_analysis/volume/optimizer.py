@@ -43,6 +43,7 @@ def optimize_radius_advanced(
     tau_gain_rel: float = 0.003,
     contacts_range: tuple[int, int] = (4, 10),
     smoothing_window: Optional[int] = None,
+    backend: str = "cpu",
     *,
     volume: Optional[np.ndarray] = None,
 ) -> OptimizationSummary:
@@ -82,8 +83,8 @@ def optimize_radius_advanced(
         step_start_time = time.time()
 
         # Run particle splitting in-memory
-        logger.info(f"Processing radius {r} ({i+1}/{len(radii)})...")
-        labels = split_particles_in_memory(volume, radius=r, connectivity=connectivity)
+        logger.info(f"Processing radius {r} ({i+1}/{len(radii)})... [backend={backend}]")
+        labels = split_particles_in_memory(volume, radius=r, connectivity=connectivity, backend=backend)
         num_particles = int(labels.max())
 
         # Calculate additional metrics
@@ -228,7 +229,7 @@ def optimize_radius_advanced(
         logger.info(f"Saving labels for selected radius r={sel_r}")
         sel_labels = None
         # Recompute labels for selected radius to avoid keeping all in memory
-        sel_labels = split_particles_in_memory(volume, radius=sel_r, connectivity=connectivity)
+        sel_labels = split_particles_in_memory(volume, radius=sel_r, connectivity=connectivity, backend=backend)
         np.save(output_dir / f"labels_r{sel_r}.npy", sel_labels.astype(np.int32))
         logger.info(f"Saved labels_r{sel_r}.npy")
     except Exception as e:

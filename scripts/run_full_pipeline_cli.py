@@ -199,6 +199,7 @@ def run_pipeline() -> None:
         return_info=True,
         enable_clahe=bool(args.enable_clahe),
         threshold_method=args.threshold_method,
+        backend=args.backend,
     )
     logging.info(
         "3D二値化完了: shape=%s, foreground=%.2f%%",
@@ -224,6 +225,7 @@ def run_pipeline() -> None:
         tau_gain_rel=args.tau_gain_rel,
         contacts_range=(args.contacts_min, args.contacts_max),
         smoothing_window=smoothing_window,
+        backend=args.backend,
         volume=binary_volume,
     )
 
