@@ -22,14 +22,16 @@ def calculate_particle_volumes(labels: np.ndarray) -> Dict[int, int]:
     Returns:
         Dict mapping particle_id -> volume_in_voxels
     """
-    unique_labels = np.unique(labels)
-    unique_labels = unique_labels[unique_labels > 0]  # Remove background
+    if labels.size == 0:
+        return {}
 
-    volumes = {}
-    for label_id in unique_labels:
-        volume = np.sum(labels == label_id)
-        volumes[label_id] = volume
+    counts = np.bincount(labels.ravel())
+    if counts.size <= 1:
+        return {}
 
+    counts[0] = 0
+    nonzero_ids = np.nonzero(counts)[0]
+    volumes = {int(label_id): int(counts[label_id]) for label_id in nonzero_ids}
     return volumes
 
 
@@ -42,20 +44,21 @@ def calculate_largest_particle_ratio(labels: np.ndarray) -> tuple[float, int, in
     Returns:
         tuple: (ratio, largest_particle_volume, total_volume)
     """
-    if labels.max() == 0:
+    if labels.size == 0:
         return 0.0, 0, 0
 
-    volumes = calculate_particle_volumes(labels)
-
-    if not volumes:
+    counts = np.bincount(labels.ravel())
+    if counts.size <= 1:
         return 0.0, 0, 0
 
-    largest_volume = max(volumes.values())
-    total_volume = sum(volumes.values())
+    counts[0] = 0
+    total_volume = int(counts.sum())
+    if total_volume == 0:
+        return 0.0, 0, 0
 
-    ratio = largest_volume / total_volume if total_volume > 0 else 0.0
-
-    return ratio, largest_volume, total_volume
+    largest_volume = int(counts.max())
+    ratio = largest_volume / total_volume
+    return float(ratio), largest_volume, total_volume
 
 
 __all__ = ["calculate_particle_volumes", "calculate_largest_particle_ratio"]

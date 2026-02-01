@@ -68,7 +68,23 @@ def split_particles_in_memory(
         return volume.astype(np.int32)
 
     # Use watershed to grow seeds back to original boundaries
-    distance = ndimage.distance_transform_edt(volume)
+    use_edt = volume.size < 20_000_000
+    if not use_edt:
+        logger.info(
+            f"Using distance_transform_cdt (taxicab) due to large volume size: {volume.size:,} voxels"
+        )
+        distance = ndimage.distance_transform_cdt(volume, metric="taxicab").astype(np.float32)
+    else:
+        try:
+            distance = ndimage.distance_transform_edt(volume)
+        except Exception as e:
+            is_memory_error = isinstance(e, MemoryError) or e.__class__.__name__ == "ArrayMemoryError"
+            if not is_memory_error:
+                raise
+            logger.warning(
+                "distance_transform_edt failed due to memory pressure; falling back to distance_transform_cdt (taxicab)"
+            )
+            distance = ndimage.distance_transform_cdt(volume, metric="taxicab").astype(np.float32)
     labels = watershed(-distance, seed_labels, mask=volume)
     return labels.astype(np.int32)
 
