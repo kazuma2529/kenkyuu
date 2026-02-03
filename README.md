@@ -49,13 +49,28 @@ pip install "napari[all]" qtpy matplotlib PySide6
 
 注: GUI 依存はスリム化のため `requirements.txt` に必ずしも含めていません。GUI 利用時に上記を追加インストールしてください。
 
-### 3) GUI の起動
+### 3) （推奨）CT画像の前処理（コントラスト付与）
+
+撮影した CT の TIF/TIFF を **そのまま GUI に入れるよりも**、先に `CT_Processor_APP.py` を使ってコントラストを調整した画像に置き換えると、二値化や分割が安定して **より良い結果になりやすい**ことが分かっています。
+
+```bash
+python CT_Processor_APP.py
+```
+
+起動後、GUI 上で以下を指定してください。
+
+- **入力フォルダ**: 元の TIF/TIFF が直接並んでいるフォルダ
+- **保存先フォルダ**: 前処理後画像の出力先フォルダ（自動作成されます）
+
+前処理後は、保存先フォルダに **同名の TIF/TIFF** が出力されます。以降の解析は、この保存先フォルダを入力として使ってください。
+
+### 4) GUI の起動
 
 ```bash
 python scripts/run_gui.py
 ```
 
-GUI 上で「📁 Select CT Images Folder」から TIF/TIFF 画像フォルダを選択し、「🚀 分析開始！(GO)」を押してください。
+GUI 上で「📁 Select CT Images Folder」から **前処理後の TIF/TIFF 画像フォルダ（推奨）**を選択し、「🚀 分析開始！(GO)」を押してください。
 
 ---
 
@@ -65,6 +80,7 @@ GUI 上で「📁 Select CT Images Folder」から TIF/TIFF 画像フォルダ�
 kenkyuu/
 │
 ├── README.md
+├── CT_Processor_APP.py        # CT画像の前処理（コントラスト一括変換）
 ├── requirements.txt
 ├── config/
 │   └── optimized_sand_particles.yaml
@@ -222,6 +238,7 @@ GUI の「🎨 View 3D (Color by Contacts)」ボタンから、粒子の接触�
 ### 統計情報
 
 解析結果には以下の情報が含まれます：
+
 - **内部粒子数**: Guard Volume内に完全に含まれる粒子数
 - **除外粒子数**: 境界に接する粒子数
 - **平均接触数（内部粒子のみ）**: より正確な統計値
@@ -274,6 +291,7 @@ pip install -y PySide6
 
 - フォーマットは TIF/TIFF を推奨（GUI は TIF/TIFF のみを 3D Otsu 対象に認識）
 - サブフォルダではなく「画像が直接並ぶフォルダ」を選択してください
+- 画像のコントラストが低く二値化が不安定な場合は、事前に `CT_Processor_APP.py` で前処理したフォルダを入力にしてください
 
 ### メモリ不足
 
