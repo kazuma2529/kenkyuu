@@ -295,9 +295,6 @@ class HistogramPlotter:
             contact_data: Dict with keys 'values' (list of contact counts),
                           'min', 'max', 'mean', 'median'
         """
-        import logging
-        logger = logging.getLogger(__name__)
-        
         if not contact_data or 'values' not in contact_data:
             logger.warning("Invalid contact histogram data")
             return
@@ -348,7 +345,7 @@ class HistogramPlotter:
             # Styling
             ax.set_xlabel('Number of Contacts per Particle', fontsize=12, color='white')
             ax.set_ylabel('Frequency (Particle Count)', fontsize=12, color='white')
-            ax.set_title('Contact Number Distribution', fontsize=14, fontweight='bold', color='white')
+            ax.set_title('Contact Number Distribution (Guard Volume Interior)', fontsize=14, fontweight='bold', color='white')
             leg = ax.legend(facecolor='#23272e', edgecolor='white', fontsize=10)
             set_legend_white(leg)
             ax.grid(True, alpha=0.3, color='white')
@@ -385,9 +382,6 @@ class HistogramPlotter:
             volume_data: Dict with keys 'values' (list of volumes),
                          'min', 'max', 'mean', 'median'
         """
-        import logging
-        logger = logging.getLogger(__name__)
-        
         if not volume_data or 'values' not in volume_data:
             logger.warning("Invalid volume histogram data")
             return
@@ -416,7 +410,7 @@ class HistogramPlotter:
             # Styling
             ax.set_xlabel('Particle Volume (voxels)', fontsize=12, color='white')
             ax.set_ylabel('Frequency (Particle Count)', fontsize=12, color='white')
-            ax.set_title('Particle Volume Distribution', fontsize=14, fontweight='bold', color='white')
+            ax.set_title('Particle Volume Distribution (Guard Volume Interior)', fontsize=14, fontweight='bold', color='white')
             leg = ax.legend(facecolor='#23272e', edgecolor='white', fontsize=10)
             set_legend_white(leg)
             ax.grid(True, alpha=0.3, color='white')
@@ -432,8 +426,11 @@ class HistogramPlotter:
                 pass
             
             # Add statistics text
+            interior_count = volume_data.get('interior_count', len(values))
+            excluded_count = volume_data.get('excluded_count', 0)
             stats_text = (
-                f"Total Particles: {len(values)}\n"
+                f"Interior Particles: {interior_count}\n"
+                f"Excluded (boundary): {excluded_count}\n"
                 f"Range: [{volume_data['min']}, {volume_data['max']}]"
             )
             ax.text(0.98, 0.98, stats_text, transform=ax.transAxes, 
@@ -444,10 +441,88 @@ class HistogramPlotter:
             mpl_widget.figure.tight_layout()
             mpl_widget.canvas.draw()
             
-            logger.info(f"✅ Plotted volume histogram: {len(values)} particles, mean={mean_val:.0f}")
+            logger.info(f"\u2705 Plotted volume histogram: {len(values)} particles, mean={mean_val:.0f}")
         
         except Exception as e:
             logger.error(f"Failed to plot volume histogram: {e}")
+            import traceback
+            traceback.print_exc()
+
+
+    @staticmethod
+    def plot_volume_vs_contacts_scatter(mpl_widget: MplWidget, scatter_data: Dict) -> None:
+        """Plot particle volume vs contact number scatter plot.
+        
+        Args:
+            mpl_widget: MplWidget to plot on
+            scatter_data: Dict with keys 'volumes' (list), 'contacts' (list),
+                          'particle_ids' (list), 'interior_count', 'excluded_count'
+        """
+        if not scatter_data or 'volumes' not in scatter_data or 'contacts' not in scatter_data:
+            logger.warning("Invalid scatter data")
+            return
+        
+        try:
+            # Clear previous plot
+            mpl_widget.clear()
+            
+            # Create subplot
+            ax = mpl_widget.figure.add_subplot(111)
+            
+            volumes = np.array(scatter_data['volumes'])
+            contacts = np.array(scatter_data['contacts'])
+            
+            # Scatter plot
+            ax.scatter(volumes, contacts, c='#5a9bd3', alpha=0.4, s=15, edgecolors='none')
+            
+            # Linear regression line
+            if len(volumes) > 2:
+                coeffs = np.polyfit(volumes, contacts, 1)
+                poly = np.poly1d(coeffs)
+                x_fit = np.linspace(volumes.min(), volumes.max(), 100)
+                ax.plot(x_fit, poly(x_fit), color='#f0ad4e', linewidth=2, linestyle='--',
+                       label=f'Linear fit (slope={coeffs[0]:.4f})')
+                
+                # Correlation coefficient
+                corr = np.corrcoef(volumes, contacts)[0, 1]
+                ax.plot([], [], ' ', label=f'R = {corr:.3f}')
+            
+            # Styling
+            ax.set_xlabel('Particle Volume (voxels)', fontsize=12, color='white')
+            ax.set_ylabel('Number of Contacts', fontsize=12, color='white')
+            ax.set_title('Particle Volume vs Contact Number\n(Guard Volume Interior)', 
+                        fontsize=14, fontweight='bold', color='white')
+            leg = ax.legend(facecolor='#23272e', edgecolor='white', fontsize=10)
+            set_legend_white(leg)
+            ax.grid(True, alpha=0.3, color='white')
+            
+            # Dark theme styling
+            style_dark_axes(ax)
+            
+            # Robust X upper bound
+            x_upper = robust_upper_bound(volumes, 99.0, 1.05)
+            if x_upper > 0:
+                ax.set_xlim(0, x_upper)
+            
+            # Add statistics text
+            interior_count = scatter_data.get('interior_count', len(volumes))
+            excluded_count = scatter_data.get('excluded_count', 0)
+            stats_text = (
+                f"Interior Particles: {interior_count}\n"
+                f"Excluded (boundary): {excluded_count}"
+            )
+            ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
+                   verticalalignment='top', horizontalalignment='right',
+                   bbox=dict(boxstyle='round', facecolor='#23272e', alpha=0.8, edgecolor='white'),
+                   fontsize=9, color='white')
+            
+            mpl_widget.figure.tight_layout()
+            mpl_widget.canvas.draw()
+            
+            logger.info(f"\u2705 Plotted volume vs contacts scatter: {len(volumes)} particles")
+        
+        except Exception as e:
+            logger.error(f"Failed to plot volume vs contacts scatter: {e}")
             import traceback
             traceback.print_exc()
 

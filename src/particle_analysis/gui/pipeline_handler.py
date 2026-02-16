@@ -62,13 +62,4 @@ class PipelineHandler:
             logger.error(f"Failed to create 3D volume: {e}")
             raise ValueError(f"Failed to create 3D volume: {e}")
     
-    # Step 2 (stacking masks into volume) removed; use 3D binarization path.
-    
-    # No masks directory anymore (GUI does not generate per-slice masks)
-    
-    def get_volume_path(self) -> Path:
-        """Deprecated: volume is no longer saved to disk."""
-        return self.output_dir / "volume.npy"
-
-
 __all__ = ["PipelineHandler"]

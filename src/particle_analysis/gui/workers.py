@@ -5,12 +5,10 @@ intensive tasks without blocking the GUI main thread.
 """
 
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import List
 
 import numpy as np
-import pandas as pd
 from qtpy.QtCore import QThread
 from qtpy.QtCore import Signal as pyqtSignal
 
@@ -22,7 +20,7 @@ class OptimizationWorker(QThread):
     
     # Signals for GUI updates
     progress_updated = pyqtSignal(object)  # OptimizationResult (for table updates)
-    optimization_complete = pyqtSignal(object, object, object)  # (OptimizationSummary, contact_histogram_data, volume_histogram_data)
+    optimization_complete = pyqtSignal(object, object, object, object)  # (OptimizationSummary, contact_histogram_data, volume_histogram_data, scatter_data)
     error_occurred = pyqtSignal(str)  # Error message
     
     # NEW: Additional signals for detailed progress tracking
@@ -117,11 +115,11 @@ class OptimizationWorker(QThread):
                 
                 # Calculate histogram data for final visualization
                 logger.info("Calculating histogram data for visualization...")
-                contact_histogram, volume_histogram = self._calculate_histogram_data(summary)
+                contact_histogram, volume_histogram, scatter_data = self._calculate_histogram_data(summary)
                 
-                # Emit completion with histogram data
-                logger.info("Emitting optimization_complete signal with histogram data...")
-                self.optimization_complete.emit(summary, contact_histogram, volume_histogram)
+                # Emit completion with histogram data and scatter data
+                logger.info("Emitting optimization_complete signal with histogram data and scatter data...")
+                self.optimization_complete.emit(summary, contact_histogram, volume_histogram, scatter_data)
                 logger.info("Signal emitted successfully")
                 
                 # Final status
@@ -140,107 +138,45 @@ class OptimizationWorker(QThread):
         self.is_cancelled = True
         self.terminate()
     
-    def _save_results(self, summary):
-        """Deprecated: Results are saved by optimizer. No action required."""
-        logger.info("Skipping _save_results; handled by optimizer")
-    
     def _calculate_histogram_data(self, summary):
-        """Calculate histogram data for final visualization.
-        
-        This calculates:
-        1. Contact number distribution histogram
-        2. Particle volume distribution histogram
-        
-        Args:
-            summary: OptimizationSummary with best_radius
-            
+        """Calculate histogram data for visualization and save CSVs.
+
+        Delegates heavy lifting to :mod:`results_export` so that data
+        computation and I/O are decoupled from the worker thread logic.
+
         Returns:
-            tuple: (contact_histogram_data, volume_histogram_data)
-                   Each is a dict with 'values' and 'bins' keys, or None if calculation fails
+            tuple: (contact_histogram_data, volume_histogram_data, scatter_data)
+                   Each is a dict or None if calculation fails.
         """
+        from .results_export import (
+            analyze_best_labels,
+            build_contact_histogram,
+            build_volume_histogram,
+            build_scatter_data,
+            save_analysis_csvs,
+        )
+
         output_dir = Path(self.output_dir)
-        best_labels_path = output_dir / f"labels_r{summary.best_radius}.npy"
-        
-        contact_histogram_data = None
-        volume_histogram_data = None
-        
+        labels_path = output_dir / f"labels_r{summary.best_radius}.npy"
+
         try:
-            if not best_labels_path.exists():
-                logger.warning(f"Best labels not found at {best_labels_path}, cannot calculate histogram data")
-                return contact_histogram_data, volume_histogram_data
-            
-            # Load selected labels
-            labels = np.load(best_labels_path)
-            logger.info(f"Loaded best labels for histogram calculation: {labels.shape}, {labels.max()} particles")
-            
-            # 1. Calculate particle volumes
-            # Skip background (label 0)
-            unique_labels = np.unique(labels)
-            unique_labels = unique_labels[unique_labels > 0]  # Remove background
-            
-            if len(unique_labels) == 0:
-                logger.warning("No particles found in best labels")
-                return contact_histogram_data, volume_histogram_data
-            
-            volumes = []
-            for label_id in unique_labels:
-                volume = np.count_nonzero(labels == label_id)
-                volumes.append(volume)
-            
-            volume_histogram_data = {
-                'values': volumes,
-                'min': int(np.min(volumes)),
-                'max': int(np.max(volumes)),
-                'mean': float(np.mean(volumes)),
-                'median': float(np.median(volumes))
-            }
-            logger.info(f"✅ Calculated volume histogram: {len(volumes)} particles, "
-                       f"range [{volume_histogram_data['min']}, {volume_histogram_data['max']}]")
-            
-            # 2. Calculate contact numbers directly from best_labels (with guard volume)
-            # Import guard volume functions
-            from ..contact.guard_volume import count_contacts_with_guard
-            
-            best_radius = summary.best_radius
-            logger.info(f"Calculating contact distribution for best radius r={best_radius} (with guard volume)...")
-            
-            try:
-                # Calculate contacts with guard volume filtering (use interior particles only)
-                full_contacts, interior_contacts, guard_stats = count_contacts_with_guard(
-                    labels,
-                    connectivity=self.connectivity
-                )
-                
-                # Extract just the counts (values) for histogram (interior particles only)
-                contact_counts = list(interior_contacts.values())
-                
-                if len(contact_counts) > 0:
-                    contact_histogram_data = {
-                        'values': contact_counts,
-                        'min': int(np.min(contact_counts)),
-                        'max': int(np.max(contact_counts)),
-                        'mean': float(np.mean(contact_counts)),
-                        'median': float(np.median(contact_counts))
-                    }
-                    logger.info(
-                        f"✅ Calculated contact histogram (interior particles only): "
-                        f"{len(contact_counts)} particles "
-                        f"({guard_stats['excluded_particles']} boundary particles excluded), "
-                        f"range [{contact_histogram_data['min']}, {contact_histogram_data['max']}], "
-                        f"mean={contact_histogram_data['mean']:.2f}"
-                    )
-                else:
-                    logger.warning("No contact data calculated")
-            except Exception as e:
-                logger.error(f"Failed to calculate contacts: {e}")
-                import traceback
-                traceback.print_exc()
-        
+            analysis = analyze_best_labels(labels_path, self.connectivity)
+        except (FileNotFoundError, ValueError) as e:
+            logger.warning(f"Skipping histogram/CSV: {e}")
+            return None, None, None
         except Exception as e:
-            logger.error(f"Failed to calculate histogram data: {e}")
+            logger.error(f"Failed to analyse best labels: {e}")
             import traceback
             traceback.print_exc()
-        
-        return contact_histogram_data, volume_histogram_data
+            return None, None, None
 
-__all__ = ["OptimizationWorker"] 
+        contact_histogram = build_contact_histogram(analysis)
+        volume_histogram = build_volume_histogram(analysis)
+        scatter_data = build_scatter_data(analysis)
+
+        # Save CSV files for Excel graph generation
+        save_analysis_csvs(output_dir, analysis)
+
+        return contact_histogram, volume_histogram, scatter_data
+
+__all__ = ["OptimizationWorker"]

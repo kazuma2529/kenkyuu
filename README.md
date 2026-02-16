@@ -150,7 +150,10 @@ kenkyuu/
 
 - GUI の「🔍 View 3D Results」で Napari 表示（ベスト r のラベル）
 - GUI の「🎨 View 3D (Color by Contacts)」で接触数に基づく3レイヤー可視化
-- GUI タブで接触数/体積の分布ヒストグラムを表示（ファイル出力なし）
+- GUI タブで以下の分布グラフを表示（ファイル出力なし、すべて Guard Volume 内部粒子のみ）:
+  - 「📊 接触分布」: 接触数ヒストグラム（Guard Volume Interior）
+  - 「📊 体積分布」: 粒子体積ヒストグラム（Guard Volume Interior）
+  - 「📊 体積vs接触数」: 粒子体積と接触数の散布図（回帰直線・相関係数 R 付き）
 
 ---
 
@@ -247,20 +250,32 @@ GUI の「🎨 View 3D (Color by Contacts)」ボタンから、粒子の接触�
 
 ## 📊 出力ファイル（現行仕様）
 
-解析完了後、`output/gui_run_YYYYMMDD_HHMM/` に以下のみ保存します：
+解析完了後、`output/gui_run_YYYYMMDD_HHMM/` に以下のファイルが保存されます：
+
+### 最適化結果
 
 | ファイル名                 | 説明                                                                            | 形式  |
 | -------------------------- | ------------------------------------------------------------------------------- | ----- |
 | `optimization_results.csv` | r ごとの集計（`radius, particle_count, largest_particle_ratio, mean_contacts`） | CSV   |
 | `labels_r{best}.npy`       | 採択 r のラベル 3D 配列（int32）                                                | NumPy |
 
-保存しないもの（設計方針）
+### グラフデータ（Excel等での再作成用）
 
-- `volume.npy`（ボリュームはインメモリ処理）
+解析完了時に、Guard Volume 内部粒子のみを対象とした以下の CSV が自動出力されます：
+
+| ファイル名                 | 列                                              | 説明                                                            |
+| -------------------------- | ----------------------------------------------- | --------------------------------------------------------------- |
+| `contact_distribution.csv` | `particle_id`, `contact_count`                  | 接触数分布（ヘッダに平均・中央値・内部/除外粒子数を記載）       |
+| `volume_distribution.csv`  | `particle_id`, `volume_voxels`                  | 体積分布（ヘッダに平均・中央値・内部/除外粒子数を記載）         |
+| `volume_vs_contacts.csv`   | `particle_id`, `volume_voxels`, `contact_count` | 体積 vs 接触数散布図（ヘッダに線形回帰傾き・相関係数 R を記載） |
+
+**注**: 各 CSV の先頭行は `#` で始まる統計情報コメントです。Excel で開く際はそのまま開けます。
+
+### 保存しないもの（設計方針）
+
+- `volume.npy`（ボリュームはインメモリ処理のみ）
 - 中間の `labels_r*.npy`（採択 r のみ保存）
-- `contact_counts.csv`, `contacts_summary.csv`, ヒスト PNG（GUI 内の可視化に限定）
-
-必要に応じて `contact/core.py` の `save_contact_csv()` / `analyze_contacts()` を呼び出せば CSV 保存を追加できます（GUI 既定では未保存）。
+- グラフ画像（PNG 等）— GUI 内の可視化に限定
 
 ---
 

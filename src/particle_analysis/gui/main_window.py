@@ -33,7 +33,7 @@ from .config import (
     WINDOW_DEFAULT_WIDTH, WINDOW_DEFAULT_HEIGHT,
     DEFAULT_MAX_RADIUS, SUPPORTED_TIF_FORMATS,
     OUTPUT_CSV_NAME, OUTPUT_BEST_LABELS_NAME,
-    CONNECTIVITY_NAMES
+    CONNECTIVITY_NAMES, STAGE_TEXT_MAP
 )
 from .metrics_calculator import MetricsCalculator
 from .napari_integration import NapariViewerManager, NAPARI_AVAILABLE
@@ -230,32 +230,24 @@ class ParticleAnalysisGUI(QWidget):
         # Removed Optimization Curves tab per design
         
         # Tab 2: Contact Number Distribution Histogram
-        self.contact_histogram_widget = MplWidget()
-        self.contact_histogram_widget.setMinimumHeight(400)
-        # Add placeholder text
-        contact_placeholder = QWidget()
-        contact_placeholder_layout = QVBoxLayout(contact_placeholder)
-        contact_placeholder_label = QLabel("📊 Contact number distribution will appear here after analysis completes")
-        contact_placeholder_label.setAlignment(Qt.AlignCenter)
-        contact_placeholder_label.setStyleSheet("color: #a0a0a0; font-size: 12pt; padding: 50px;")
-        contact_placeholder_layout.addWidget(contact_placeholder_label)
-        self.contact_histogram_widget.layout().addWidget(contact_placeholder)
-        self.results_tabs.addTab(self.contact_histogram_widget, "📊 接触分布")
+        self.contact_histogram_widget = self._create_plot_tab(
+            "📊 Contact number distribution will appear here after analysis completes",
+            "📊 接触分布"
+        )
         
         # Tab 3: Particle Volume Distribution Histogram
-        self.volume_histogram_widget = MplWidget()
-        self.volume_histogram_widget.setMinimumHeight(400)
-        # Add placeholder text
-        volume_placeholder = QWidget()
-        volume_placeholder_layout = QVBoxLayout(volume_placeholder)
-        volume_placeholder_label = QLabel("📊 Particle volume distribution will appear here after analysis completes")
-        volume_placeholder_label.setAlignment(Qt.AlignCenter)
-        volume_placeholder_label.setStyleSheet("color: #a0a0a0; font-size: 12pt; padding: 50px;")
-        volume_placeholder_layout.addWidget(volume_placeholder_label)
-        self.volume_histogram_widget.layout().addWidget(volume_placeholder)
-        self.results_tabs.addTab(self.volume_histogram_widget, "📊 体積分布")
+        self.volume_histogram_widget = self._create_plot_tab(
+            "📊 Particle volume distribution will appear here after analysis completes",
+            "📊 体積分布"
+        )
         
-        # Tab 4: Final Results and 3D View
+        # Tab 4: Volume vs Contact Number Scatter Plot
+        self.scatter_widget = self._create_plot_tab(
+            "📊 Volume vs Contact Number scatter plot will appear here after analysis completes",
+            "📊 体積vs接触数"
+        )
+        
+        # Tab 5: Final Results and 3D View
         final_results_widget = QWidget()
         final_results_layout = QVBoxLayout(final_results_widget)
         
@@ -286,6 +278,28 @@ class ParticleAnalysisGUI(QWidget):
         layout.addWidget(self.results_tabs)
         
         return panel
+    
+    def _create_plot_tab(self, placeholder_text: str, tab_title: str) -> MplWidget:
+        """Create an MplWidget tab with a placeholder label.
+        
+        Args:
+            placeholder_text: Text shown before analysis completes
+            tab_title: Tab title in the QTabWidget
+            
+        Returns:
+            The MplWidget instance (already added to results_tabs)
+        """
+        widget = MplWidget()
+        widget.setMinimumHeight(400)
+        placeholder = QWidget()
+        placeholder_layout = QVBoxLayout(placeholder)
+        label = QLabel(placeholder_text)
+        label.setAlignment(Qt.AlignCenter)
+        label.setStyleSheet("color: #a0a0a0; font-size: 12pt; padding: 50px;")
+        placeholder_layout.addWidget(label)
+        widget.layout().addWidget(placeholder)
+        self.results_tabs.addTab(widget, tab_title)
+        return widget
     
     def create_advanced_section(self):
         """Create advanced settings section (hidden by default)."""
@@ -552,6 +566,7 @@ class ParticleAnalysisGUI(QWidget):
         self.results_table.clear_results()
         self.contact_histogram_widget.clear()
         self.volume_histogram_widget.clear()
+        self.scatter_widget.clear()
         self.optimization_summary = None
         
         # Prepare UI for analysis
@@ -690,13 +705,7 @@ class ParticleAnalysisGUI(QWidget):
         Args:
             stage: Current stage (e.g., "initialization", "optimization", "finalization")
         """
-        stage_text_map = {
-            "initialization": "🔄 初期化中...",
-            "optimization": "⚙️ 最適化実行中...",
-            "finalization": "🎯 最適r選定中...",
-        }
-        
-        display_text = stage_text_map.get(stage, f"処理中: {stage}")
+        display_text = STAGE_TEXT_MAP.get(stage, f"処理中: {stage}")
         logger.info(f"Stage changed: {display_text}")
         
         # Optionally update a stage label if you have one
@@ -709,13 +718,14 @@ class ParticleAnalysisGUI(QWidget):
             getattr(self, 'temp_results', None)
         )
     
-    def on_optimization_complete(self, summary, contact_histogram, volume_histogram):
-        """Handle optimization completion with histogram data."""
+    def on_optimization_complete(self, summary, contact_histogram, volume_histogram, scatter_data=None):
+        """Handle optimization completion with histogram data and scatter data."""
         logger.info("=" * 70)
         logger.info("on_optimization_complete CALLED!")
         logger.info(f"Summary received: {summary}")
         logger.info(f"Contact histogram: {contact_histogram is not None}")
         logger.info(f"Volume histogram: {volume_histogram is not None}")
+        logger.info(f"Scatter data: {scatter_data is not None}")
         logger.info(f"Optimization complete: {len(summary.results)} radii tested, best r={summary.best_radius}")
         logger.info("=" * 70)
         self.optimization_summary = summary
@@ -786,6 +796,15 @@ class ParticleAnalysisGUI(QWidget):
             )
         else:
             logger.warning("No volume histogram data available")
+        
+        # Plot scatter (volume vs contacts)
+        if scatter_data:
+            HistogramPlotter.plot_volume_vs_contacts_scatter(
+                self.scatter_widget,
+                scatter_data
+            )
+        else:
+            logger.warning("No scatter data available")
         
         # Enable 3D viewing
         self.view_3d_btn.setEnabled(True)
@@ -872,10 +891,6 @@ class ParticleAnalysisGUI(QWidget):
             QMessageBox.warning(self, "Warning", "No analysis results available.")
             return
         
-        # Load selected radius labels
-        if not self.optimization_summary:
-            QMessageBox.warning(self, "Warning", "No optimization summary available.")
-            return
         best_r = self.optimization_summary.best_radius
         best_labels_path = self.output_dir / f"labels_r{best_r}.npy"
         if best_labels_path.exists():
@@ -903,8 +918,8 @@ class ParticleAnalysisGUI(QWidget):
             return
         
         try:
-            # Get connectivity from optimization settings
-            connectivity = getattr(self, 'connectivity', 6)
+            # Get connectivity from UI settings
+            connectivity = self.connectivity_combo.currentData()
             
             # Prepare metadata
             best_result = self.optimization_summary.get_result_by_radius(best_r)

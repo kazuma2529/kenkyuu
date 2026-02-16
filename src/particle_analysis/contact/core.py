@@ -9,7 +9,6 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -148,7 +147,6 @@ def analyze_contacts(
     Args:
         csv_path: Path to contact_counts.csv
         out_summary: Output path for summary CSV
-        out_hist: Output path for histogram PNG
         exclude_ids: List of particle IDs to exclude
         auto_exclude_threshold: Automatically exclude particles with contacts > threshold
     
@@ -234,14 +232,3 @@ def _save_summary_csv(stats: Dict[str, float], out_summary: str) -> None:
     summary_df = pd.DataFrame([stats])
     summary_df.to_csv(out_summary, index=False)
     logger.info("Saved summary to %s", out_summary)
-
-
-def _create_histogram(contacts: np.ndarray, stats: Dict[str, float], out_hist: str) -> None:
-    """Deprecated: histogram output is abolished and kept for backward compatibility (no-op)."""
-    logger.info("Histogram generation is disabled; skipping save to %s", out_hist)
-
-
-def _save_empty_analysis(out_summary: str, out_hist: str, stats: Dict[str, float], message: str) -> None:
-    """Deprecated: histogram output is abolished; save only summary."""
-    _save_summary_csv(stats, out_summary)
-    logger.info("Saved empty analysis summary to %s (hist disabled)", out_summary)

@@ -187,5 +187,3 @@ def load_and_binarize_3d_volume(
     else:
         return binary_volume
 
-
-# Method A (per-slice 2D mask processing) and related CLI-oriented helpers have been removed.
