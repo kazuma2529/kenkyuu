@@ -239,13 +239,19 @@ class NapariViewerManager:
         logger.info(f"Labels shape: {best_labels.shape}")
         logger.info(f"Unique particles: {best_labels.max()}")
         
-        # Calculate contact counts
-        from ..contact import count_contacts
+        # Calculate contact counts with guard volume filtering
+        from ..contact.guard_volume import count_contacts_with_guard
         from ..contact.visualization import get_discrete_contact_colormap
         
-        logger.info("Calculating contact counts...")
-        contact_counts = count_contacts(best_labels, connectivity=connectivity)
-        logger.info(f"Calculated contacts for {len(contact_counts)} particles")
+        logger.info("Calculating contact counts with guard volume filtering...")
+        full_contacts, contact_counts, guard_stats = count_contacts_with_guard(
+            best_labels, connectivity=connectivity
+        )
+        logger.info(
+            f"Guard volume: {guard_stats['interior_particles']} interior particles "
+            f"out of {guard_stats['total_particles']} total "
+            f"({guard_stats['excluded_particles']} excluded)"
+        )
         
         # Create particle_id -> color mapping based on contact counts
         labels_colors = self._create_contact_color_mapping(contact_counts)
