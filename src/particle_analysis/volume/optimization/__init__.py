@@ -1,29 +1,16 @@
 """Optimization algorithms package.
 
-This package provides algorithms for radius selection based on multiple criteria:
+This package provides:
+- utils: Knee point detection
+- algorithms: Pareto+distance fallback selection
 
-- utils: Utility functions (knee point detection, scoring)
-- algorithms: Selection algorithms (weighted composite, Pareto+distance)
+The primary selection logic is in optimizer.select_radius_by_constraints().
 """
 
-from .utils import (
-    detect_knee_point,
-    calculate_coordination_score,
-    calculate_composite_score,
-)
-
-from .algorithms import (
-    determine_best_radius_advanced,
-    determine_best_radius_pareto_distance,
-)
+from .utils import detect_knee_point
+from .algorithms import determine_best_radius_pareto_distance
 
 __all__ = [
-    # Utility functions
     "detect_knee_point",
-    "calculate_coordination_score", 
-    "calculate_composite_score",
-    
-    # Selection algorithms
-    "determine_best_radius_advanced",
     "determine_best_radius_pareto_distance",
 ]

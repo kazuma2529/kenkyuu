@@ -24,7 +24,6 @@ class OptimizationResult:
     largest_particle_volume: int = 0
     # Guard volume statistics
     interior_particle_count: int = 0
-    mean_contacts_interior: float = 0.0
     excluded_particle_count: int = 0
 
     def __post_init__(self):
@@ -67,7 +66,6 @@ class OptimizationSummary:
                     'total_volume': result.total_volume,
                     'largest_particle_volume': result.largest_particle_volume,
                     'interior_particle_count': result.interior_particle_count,
-                    'mean_contacts_interior': result.mean_contacts_interior,
                     'excluded_particle_count': result.excluded_particle_count
                 })
             return pd.DataFrame(data)

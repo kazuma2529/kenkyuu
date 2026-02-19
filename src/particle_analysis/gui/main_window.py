@@ -323,8 +323,8 @@ class ParticleAnalysisGUI(QWidget):
         
         self.max_radius_spinbox = QSpinBox()
         self.max_radius_spinbox.setRange(2, 15)
-        self.max_radius_spinbox.setValue(10)
-        self.max_radius_spinbox.setToolTip("Maximum erosion radius to test (default: 10)")
+        self.max_radius_spinbox.setValue(DEFAULT_MAX_RADIUS)
+        self.max_radius_spinbox.setToolTip(f"Maximum erosion radius to test (default: {DEFAULT_MAX_RADIUS})")
         radius_layout.addWidget(self.max_radius_spinbox, 1, 1)
         
         self.radius_preview_label = QLabel("")
@@ -390,49 +390,39 @@ class ParticleAnalysisGUI(QWidget):
         self.tau_ratio_spin.setRange(0.0, 1.0)
         self.tau_ratio_spin.setSingleStep(0.01)
         self.tau_ratio_spin.setDecimals(3)
-        self.tau_ratio_spin.setValue(0.05)
-        self.tau_ratio_spin.setToolTip("Threshold for largest_particle_ratio (default 0.05)")
+        self.tau_ratio_spin.setValue(0.03)
+        self.tau_ratio_spin.setToolTip("Threshold for largest_particle_ratio (default 0.03)")
         self.tau_ratio_spin.setMaximumWidth(160)
         params_layout.addWidget(self.tau_ratio_spin, 1, 1)
 
-        # tau_gain (relative %, e.g., 0.3%)
-        params_layout.addWidget(QLabel("τgain (% of base count):"), 2, 0)
-        self.tau_gain_percent_spin = QDoubleSpinBox()
-        self.tau_gain_percent_spin.setRange(0.0, 5.0)
-        self.tau_gain_percent_spin.setSingleStep(0.1)
-        self.tau_gain_percent_spin.setDecimals(2)
-        self.tau_gain_percent_spin.setValue(0.30)
-        self.tau_gain_percent_spin.setToolTip("Relative threshold as percent of base count (default 0.30%)")
-        self.tau_gain_percent_spin.setMaximumWidth(160)
-        params_layout.addWidget(self.tau_gain_percent_spin, 2, 1)
-
         # contacts range [cmin, cmax]
-        params_layout.addWidget(QLabel("Mean contacts range [min, max]:"), 3, 0)
+        params_layout.addWidget(QLabel("Mean contacts range [min, max]:"), 2, 0)
         range_box = QWidget()
         range_layout = QHBoxLayout(range_box)
         range_layout.setContentsMargins(0, 0, 0, 0)
         range_layout.setSpacing(8)
         self.contacts_min_spin = QSpinBox()
         self.contacts_min_spin.setRange(0, 50)
-        self.contacts_min_spin.setValue(4)
+        self.contacts_min_spin.setValue(5)
         self.contacts_max_spin = QSpinBox()
         self.contacts_max_spin.setRange(1, 100)
-        self.contacts_max_spin.setValue(10)
+        self.contacts_max_spin.setValue(9)
         self.contacts_min_spin.setMaximumWidth(100)
         self.contacts_max_spin.setMaximumWidth(100)
         range_layout.addWidget(self.contacts_min_spin)
         range_layout.addWidget(QLabel("to"))
         range_layout.addWidget(self.contacts_max_spin)
-        params_layout.addWidget(range_box, 3, 1)
+        params_layout.addWidget(range_box, 2, 1)
 
         # smoothing window (None/1/2)
-        params_layout.addWidget(QLabel("Smoothing window (moving average):"), 4, 0)
+        params_layout.addWidget(QLabel("Smoothing window (moving average):"), 3, 0)
         self.smoothing_combo = QComboBox()
         self.smoothing_combo.addItem("None", None)
         self.smoothing_combo.addItem("1", 1)
         self.smoothing_combo.addItem("2", 2)
         self.smoothing_combo.setCurrentIndex(0)
-        params_layout.addWidget(self.smoothing_combo, 4, 1)
+        params_layout.addWidget(self.smoothing_combo, 3, 1)
+
 
         # Stretch columns so inputs have space
         params_layout.setColumnStretch(0, 0)
@@ -609,7 +599,6 @@ class ParticleAnalysisGUI(QWidget):
             connectivity = self.connectivity_combo.currentData()  # Get selected connectivity (6 or 26)
             # Read selector params from UI
             tau_ratio = float(self.tau_ratio_spin.value())
-            tau_gain_rel = float(self.tau_gain_percent_spin.value()) / 100.0
             cmin = int(self.contacts_min_spin.value())
             cmax = int(self.contacts_max_spin.value())
             smoothing_window = self.smoothing_combo.currentData()
@@ -622,7 +611,6 @@ class ParticleAnalysisGUI(QWidget):
                 radii=radii,
                 connectivity=connectivity,
                 tau_ratio=tau_ratio,
-                tau_gain_rel=tau_gain_rel,
                 contacts_range=(cmin, cmax),
                 smoothing_window=smoothing_window
             )
@@ -763,7 +751,7 @@ class ParticleAnalysisGUI(QWidget):
 
 🔗 接触方式: {connectivity_name}
 ✅ 最適化手法: {summary.optimization_method}
-🔬 選択理由: Selected via HardConstraint + MarginalGain + ContactsRange
+🔬 選択理由: Selected via HardConstraint + PeakCount + ContactsRange
 
 📁 保存された結果:
 {csv_exists} CSV: optimization_results.csv

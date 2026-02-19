@@ -1,9 +1,9 @@
 """Radius selection algorithms.
 
-This module provides different algorithms for selecting the optimal radius
-based on various optimization criteria:
-- Advanced weighted composite method (legacy)
-- Pareto + normalized distance method (new)
+This module provides fallback algorithms for selecting the optimal radius:
+- Pareto + normalized distance method (fallback when constraint-based selection fails)
+
+The primary selection logic is in optimizer.select_radius_by_constraints().
 """
 
 import logging
@@ -11,76 +11,14 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from ..data_structures import OptimizationResult, OptimizationSummary
+from ..data_structures import OptimizationSummary
 from ..metrics import (
     calculate_variation_of_information,
     calculate_hhi,
 )
-from .utils import (
-    detect_knee_point,
-    calculate_composite_score,
-    calculate_coordination_score,
-)
+from .utils import detect_knee_point
 
 logger = logging.getLogger(__name__)
-
-
-def determine_best_radius_advanced(summary: OptimizationSummary) -> Tuple[int, str]:
-    """Determine best radius using advanced multi-criteria analysis.
-
-    This is the legacy weighted composite method for backward compatibility.
-
-    Args:
-        summary: Optimization summary with all results
-
-    Returns:
-        tuple: (best_radius, explanation)
-    """
-    if not summary.results:
-        return 0, "No results available"
-
-    # Calculate composite scores for all results
-    scored_results = []
-    for result in summary.results:
-        score = calculate_composite_score(result, summary.results)
-        scored_results.append((result.radius, score, result))
-
-    # Sort by score (descending)
-    scored_results.sort(key=lambda x: x[1], reverse=True)
-
-    best_radius, best_score, best_result = scored_results[0]
-
-    # Generate explanation
-    explanation_parts = []
-
-    # Particle count analysis
-    particle_counts = [r.particle_count for r in summary.results]
-    radii = [r.radius for r in summary.results]
-    if len(particle_counts) >= 3:
-        knee_idx = detect_knee_point(radii, particle_counts)
-        knee_radius = summary.results[knee_idx].radius
-        explanation_parts.append(f"Knee point detected at r={knee_radius}")
-
-    # Largest particle analysis
-    if best_result.largest_particle_ratio <= 0.05:
-        explanation_parts.append(f"Excellent particle separation ({best_result.largest_particle_ratio:.1%} largest)")
-    elif best_result.largest_particle_ratio <= 0.20:
-        explanation_parts.append(f"Good particle separation ({best_result.largest_particle_ratio:.1%} largest)")
-    else:
-        explanation_parts.append(f"Moderate separation ({best_result.largest_particle_ratio:.1%} largest)")
-
-    # Coordination number analysis
-    coord_score = calculate_coordination_score(best_result.mean_contacts)
-    if coord_score >= 0.8:
-        explanation_parts.append(f"Physically reasonable contacts ({best_result.mean_contacts:.1f})")
-    elif coord_score >= 0.5:
-        explanation_parts.append(f"Acceptable contacts ({best_result.mean_contacts:.1f})")
-    else:
-        explanation_parts.append(f"Suboptimal contacts ({best_result.mean_contacts:.1f})")
-
-    explanation = f"Best radius r={best_radius} (score: {best_score:.3f}). " + "; ".join(explanation_parts)
-
-    return best_radius, explanation
 
 
 def determine_best_radius_pareto_distance(
@@ -219,6 +157,5 @@ def determine_best_radius_pareto_distance(
 
 
 __all__ = [
-    "determine_best_radius_advanced",
     "determine_best_radius_pareto_distance",
 ]

@@ -29,12 +29,7 @@ from .metrics import (
 
 # Import from reorganized optimization package
 from .optimization import (
-    # Utility functions
     detect_knee_point,
-    calculate_coordination_score,
-    calculate_composite_score,
-    # Selection algorithms
-    determine_best_radius_advanced,
     determine_best_radius_pareto_distance,
 )
 
@@ -67,10 +62,5 @@ __all__ = [
     
     # Optimization utilities
     "detect_knee_point",
-    "calculate_coordination_score",
-    "calculate_composite_score",
-    
-    # Selection algorithms
-    "determine_best_radius_advanced",
     "determine_best_radius_pareto_distance",
 ] 

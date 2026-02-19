@@ -11,8 +11,6 @@ from pathlib import Path
 from typing import List, Optional, Callable
 
 import numpy as np
-import math
-from dataclasses import asdict
 try:
     import pandas as pd
 except Exception:  # pandas は実行環境により未導入の場合があるため遅延依存
@@ -21,10 +19,7 @@ except Exception:  # pandas は実行環境により未導入の場合がある�
 from .data_structures import OptimizationResult, OptimizationSummary
 from .core import split_particles_in_memory
 from .metrics.basic import calculate_largest_particle_ratio
-from .optimization.algorithms import (
-    determine_best_radius_advanced,
-    determine_best_radius_pareto_distance,
-)
+from .optimization.algorithms import determine_best_radius_pareto_distance
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +34,8 @@ def optimize_radius_advanced(
     early_stopping: bool = False,
     plateau_threshold: float = 0.01,
     # New selector params (GUI-configurable)
-    tau_ratio: float = 0.05,
-    tau_gain_rel: float = 0.003,
-    contacts_range: tuple[int, int] = (4, 10),
+    tau_ratio: float = 0.03,
+    contacts_range: tuple[int, int] = (5, 9),
     smoothing_window: Optional[int] = None,
     *,
     volume: Optional[np.ndarray] = None,
@@ -61,8 +55,6 @@ def optimize_radius_advanced(
     Returns:
         OptimizationSummary with all results and best radius
     """
-    from collections import OrderedDict
-
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -92,7 +84,6 @@ def optimize_radius_advanced(
         # Calculate mean contacts if requested (with guard volume filtering)
         mean_contacts = 0.0
         interior_particle_count = 0
-        mean_contacts_interior = 0.0
         excluded_particle_count = 0
         
         if complete_analysis and num_particles > 0:
@@ -112,8 +103,7 @@ def optimize_radius_advanced(
                 # Use interior particles for mean contacts (primary metric)
                 if interior_contacts and len(interior_contacts) > 0:
                     interior_contact_values = list(interior_contacts.values())
-                    mean_contacts_interior = np.mean(interior_contact_values)
-                    mean_contacts = mean_contacts_interior  # Use interior for primary metric
+                    mean_contacts = np.mean(interior_contact_values)
                     
                     interior_particle_count = guard_stats['interior_particles']
                     excluded_particle_count = guard_stats['excluded_particles']
@@ -141,7 +131,7 @@ def optimize_radius_advanced(
             elif num_particles == 0:
                 logger.info(f"Skipping contact analysis for r={r} (no particles detected)")
                 
-        logger.info(f"Final mean_contacts for r={r}: {mean_contacts:.1f} (interior particles only)")
+        logger.info(f"Final mean_contacts for r={r}: {mean_contacts:.1f}")
 
         processing_time = time.time() - step_start_time
 
@@ -156,7 +146,6 @@ def optimize_radius_advanced(
             total_volume=total_vol,
             largest_particle_volume=largest_vol,
             interior_particle_count=interior_particle_count,
-            mean_contacts_interior=mean_contacts_interior,
             excluded_particle_count=excluded_particle_count
         )
 
@@ -184,21 +173,20 @@ def optimize_radius_advanced(
         
         prev_count = num_particles
 
-    # Determine best radius using new hard-constraint + marginal gain + contacts range
+    # Determine best radius using hard-constraint + peak particle count + contacts range
     try:
         selection = _select_radius_by_constraints_from_summary(
             summary,
             tau_ratio=tau_ratio,
-            tau_gain_rel=tau_gain_rel,
             contacts_range=contacts_range,
             smoothing_window=smoothing_window,
         )
         best_radius = selection["selected_radius"]
         explanation = (
             f"Selected by constraints: r={best_radius} | reason={selection['reason']} | "
-            f"r_star={selection.get('r_star')} | thresholds={selection.get('thresholds')}"
+            f"r_star={selection.get('r_star')} | r_peak={selection.get('r_peak')} | thresholds={selection.get('thresholds')}"
         )
-        summary.optimization_method = "HardConstraint+MarginalGain+ContactsRange"
+        summary.optimization_method = "HardConstraint+PeakCount+ContactsRange"
     except Exception as e:
         logger.error(f"Constraint-based selection failed, fallback to Pareto+distance: {e}")
         best_radius, explanation = determine_best_radius_pareto_distance(summary)
@@ -216,7 +204,6 @@ def optimize_radius_advanced(
             logger.warning("pandas not available; skipping optimization_results.csv save")
         else:
             df = _summary_to_dataframe(summary)
-            (output_dir / "").mkdir(parents=True, exist_ok=True)
             df.to_csv(output_dir / "optimization_results.csv", index=False)
             logger.info("Saved optimization_results.csv")
     except Exception as e:
@@ -274,22 +261,30 @@ __all__ = ["optimize_radius_advanced", "optimize_radius"]
 def select_radius_by_constraints(
     results_df,
     *,
-    tau_ratio: float = 0.05,
-    tau_gain_rel: float = 0.003,
-    contacts_range: tuple[int, int] = (4, 10),
+    tau_ratio: float = 0.03,
+    contacts_range: tuple[int, int] = (5, 9),
     smoothing_window: Optional[int] = None,
 ):
-    """Select radius by hard-constraint + marginal gain + contacts range.
+    """Select radius by hard-constraint + peak particle count + contacts range.
+
+    Selection logic:
+      1) r* = first R where largest_particle_ratio <= tau_ratio
+      2) R_peak = R with maximum particle_count among {R >= r* AND lpr <= tau_ratio}
+      3) Priority:
+         (A) R_peak if mean_contacts in contacts_range
+         (B) First R >= r* where mean_contacts in contacts_range
+         (C) R_peak (without contacts constraint)
+         (D) r*
+         (E) max R (last resort)
 
     Args:
-        results_df: pandas DataFrame like with columns [radius, particle_count, largest_particle_ratio, mean_contacts]
-        tau_ratio: threshold for largest_particle_ratio
-        tau_gain_rel: relative threshold (e.g., 0.003 == 0.3%) referenced to particle_count at r*
-        contacts_range: acceptable range for mean_contacts (inclusive)
+        results_df: pandas DataFrame with columns [radius, particle_count, largest_particle_ratio, mean_contacts]
+        tau_ratio: threshold for largest_particle_ratio (default 0.03 = 3%)
+        contacts_range: acceptable range for mean_contacts (default (5, 9), inclusive)
         smoothing_window: optional window size (1 or 2 recommended) for moving average smoothing
 
     Returns:
-        dict with keys: selected_radius, r_star, reason, thresholds, fallback_path_index
+        dict with keys: selected_radius, r_star, r_peak, reason, thresholds, fallback_path_index
     """
     if pd is None:
         raise RuntimeError("pandas is required for select_radius_by_constraints")
@@ -314,6 +309,9 @@ def select_radius_by_constraints(
     lpr = _ma(df["largest_particle_ratio"])  # largest particle ratio
     pc = _ma(df["particle_count"])  # particle count
 
+    cmin, cmax = contacts_range
+    thresholds = {"tau_ratio": tau_ratio, "contacts_range": (cmin, cmax)}
+
     # 1) r* (first r s.t. lpr <= tau_ratio)
     mask_pass = lpr <= tau_ratio
     if mask_pass.any():
@@ -323,87 +321,97 @@ def select_radius_by_constraints(
         # Not found -> define r* as minimum radius (for fallback path bookkeeping)
         r_star = int(df.loc[0, "radius"]) if len(df) else None
 
-    # 2) simultaneous conditions from r >= r*
+    # 2) R_peak: among {R >= r* AND lpr <= tau_ratio}, find R with max particle_count
+    r_peak = None
+    idx_peak = None
     if r_star is not None:
-        df_after = df[df["radius"] >= r_star].copy()
-        pc_after = pc[df_after.index]
-        lpr_after = lpr[df_after.index]
-    else:
-        df_after = df.copy()
-        pc_after = pc
-        lpr_after = lpr
+        valid_mask = (df["radius"] >= r_star) & (lpr <= tau_ratio)
+        df_valid = df[valid_mask]
+        if len(df_valid) > 0:
+            pc_valid = pc[df_valid.index]
+            idx_peak = int(pc_valid.idxmax())
+            r_peak = int(df.loc[idx_peak, "radius"])
 
-    # Base for marginal gain threshold
+    # 3) Selection priority
+
+    # (A) R_peak AND mean_contacts in range
+    if r_peak is not None and idx_peak is not None:
+        mc_at_peak = float(df.loc[idx_peak, "mean_contacts"])
+        if cmin <= mc_at_peak <= cmax:
+            return {
+                "selected_radius": r_peak,
+                "r_star": r_star,
+                "r_peak": r_peak,
+                "reason": "peak_and_contacts",
+                "thresholds": thresholds,
+                "fallback_path_index": 0,
+            }
+
+    # (B) First R >= r* where mean_contacts in range
     if r_star is not None:
-        base_count = float(df.loc[df["radius"] == r_star, "particle_count"].iloc[0])
-    else:
-        base_count = float(df["particle_count"].iloc[0]) if len(df) else 0.0
+        df_after = df[df["radius"] >= r_star]
+        for i in df_after.index:
+            if cmin <= df.loc[i, "mean_contacts"] <= cmax:
+                sel_r = int(df.loc[i, "radius"])
+                return {
+                    "selected_radius": sel_r,
+                    "r_star": r_star,
+                    "r_peak": r_peak,
+                    "reason": "contacts_only",
+                    "thresholds": thresholds,
+                    "fallback_path_index": 1,
+                }
 
-    th_gain = math.ceil(base_count * float(tau_gain_rel))
-
-    # Compute Δcount = pc(r) - pc(r-1) in the sorted order
-    # For the very first row, Δcount is undefined; we set a large value so it won't pass.
-    dcount = pc.diff().fillna(np.inf)
-
-    cmin, cmax = contacts_range
-
-    def _first_index(iter_idx):
-        try:
-            return int(next(iter(iter_idx)))
-        except StopIteration:
-            return None
-
-    # (A) both conditions (Δcount <= th_gain) AND (contacts in range)
-    idx_both = _first_index(
-        i for i in df_after.index
-        if (dcount.loc[i] <= th_gain) and (cmin <= df.loc[i, "mean_contacts"] <= cmax)
-    )
-    if idx_both is not None:
-        sel_r = int(df.loc[idx_both, "radius"])
+    # (C) R_peak (without contacts constraint)
+    if r_peak is not None:
         return {
-            "selected_radius": sel_r,
+            "selected_radius": r_peak,
             "r_star": r_star,
-            "reason": "both",
-            "thresholds": {"tau_ratio": tau_ratio, "tau_gain_rel": tau_gain_rel, "gain_abs": th_gain, "contacts_range": (cmin, cmax)},
-            "fallback_path_index": 0,
+            "r_peak": r_peak,
+            "reason": "r_peak",
+            "thresholds": thresholds,
+            "fallback_path_index": 2,
         }
 
-    # (B) contacts only
-    idx_contacts = _first_index(
-        i for i in df_after.index
-        if (cmin <= df.loc[i, "mean_contacts"] <= cmax)
-    )
-    if idx_contacts is not None:
-        sel_r = int(df.loc[idx_contacts, "radius"])
-        return {
-            "selected_radius": sel_r,
-            "r_star": r_star,
-            "reason": "contacts_only",
-            "thresholds": {"tau_ratio": tau_ratio, "tau_gain_rel": tau_gain_rel, "gain_abs": th_gain, "contacts_range": (cmin, cmax)},
-            "fallback_path_index": 1,
-        }
-
-    # (C) r*
+    # (D) r*
     if r_star is not None:
         return {
             "selected_radius": int(r_star),
             "r_star": r_star,
+            "r_peak": r_peak,
             "reason": "r_star",
-            "thresholds": {"tau_ratio": tau_ratio, "tau_gain_rel": tau_gain_rel, "gain_abs": th_gain, "contacts_range": (cmin, cmax)},
-            "fallback_path_index": 2,
+            "thresholds": thresholds,
+            "fallback_path_index": 3,
         }
 
-    # (D) max r
+    # (E) max r
     if len(df) == 0:
         raise ValueError("No results to select from")
     sel_r = int(df["radius"].max())
     return {
         "selected_radius": sel_r,
         "r_star": r_star,
+        "r_peak": r_peak,
         "reason": "max_r",
-        "thresholds": {"tau_ratio": tau_ratio, "tau_gain_rel": tau_gain_rel, "gain_abs": th_gain, "contacts_range": (cmin, cmax)},
-        "fallback_path_index": 3,
+        "thresholds": thresholds,
+        "fallback_path_index": 4,
     }
+
+
+def _select_radius_by_constraints_from_summary(
+    summary: "OptimizationSummary",
+    *,
+    tau_ratio: float = 0.03,
+    contacts_range: tuple[int, int] = (5, 9),
+    smoothing_window: Optional[int] = None,
+):
+    df = _summary_to_dataframe(summary)
+    return select_radius_by_constraints(
+        df,
+        tau_ratio=tau_ratio,
+        contacts_range=contacts_range,
+        smoothing_window=smoothing_window,
+    )
 
 
 def _summary_to_dataframe(summary: "OptimizationSummary"):
@@ -417,25 +425,6 @@ def _summary_to_dataframe(summary: "OptimizationSummary"):
             "largest_particle_ratio": res.largest_particle_ratio,
             "mean_contacts": res.mean_contacts,
             "interior_particle_count": res.interior_particle_count,
-            "mean_contacts_interior": res.mean_contacts_interior,
             "excluded_particle_count": res.excluded_particle_count,
         })
     return pd.DataFrame(rows)
-
-
-def _select_radius_by_constraints_from_summary(
-    summary: "OptimizationSummary",
-    *,
-    tau_ratio: float = 0.05,
-    tau_gain_rel: float = 0.003,
-    contacts_range: tuple[int, int] = (4, 10),
-    smoothing_window: Optional[int] = None,
-):
-    df = _summary_to_dataframe(summary)
-    return select_radius_by_constraints(
-        df,
-        tau_ratio=tau_ratio,
-        tau_gain_rel=tau_gain_rel,
-        contacts_range=contacts_range,
-        smoothing_window=smoothing_window,
-    )

@@ -16,6 +16,10 @@ from .config import (
     NAPARI_VOLUME_COLORMAP,
     NAPARI_DEFAULT_CAMERA_ANGLES,
     NAPARI_NDISPLAY_3D,
+    NAPARI_GUARD_BOUNDARY_OPACITY,
+    NAPARI_GUARD_BOUNDARY_COLORMAP,
+    NAPARI_BOUNDARY_PARTICLES_OPACITY,
+    NAPARI_GUARD_SHELL_THICKNESS,
 )
 
 logger = logging.getLogger(__name__)
@@ -90,44 +94,6 @@ class NapariViewerManager:
             return self.viewer
         else:
             return self.create_viewer(title)
-    
-    def _create_contact_color_mapping(
-        self, 
-        contact_counts: dict[int, int]
-    ) -> dict[int, tuple[float, float, float, float]]:
-        """Create particle_id -> RGBA color mapping based on contact counts.
-        
-        Args:
-            contact_counts: Dictionary mapping particle_id -> contact_count
-            
-        Returns:
-            Dictionary mapping particle_id -> (R, G, B, A) tuple (0-1 range)
-        """
-        from ..contact.visualization import get_discrete_contact_colormap
-        
-        _, color_ranges = get_discrete_contact_colormap()
-        
-        labels_colors = {}
-        for particle_id, contact_count in contact_counts.items():
-            # Find which color range this contact count belongs to
-            for min_contact, max_contact_range, name, color in color_ranges:
-                if name == "Background":
-                    continue
-                if max_contact_range is None:
-                    if contact_count >= min_contact:
-                        labels_colors[particle_id] = (
-                            float(color[0]), float(color[1]), float(color[2]), 1.0
-                        )
-                        break
-                else:
-                    if min_contact <= contact_count <= max_contact_range:
-                        labels_colors[particle_id] = (
-                            float(color[0]), float(color[1]), float(color[2]), 1.0
-                        )
-                        break
-        
-        logger.info(f"Created color mapping for {len(labels_colors)} particles")
-        return labels_colors
     
     def load_best_labels(
         self,
@@ -212,6 +178,13 @@ class NapariViewerManager:
     ) -> 'napari.Viewer':
         """Load best optimization result with contact count coloring in Napari viewer.
         
+        Layers:
+            1. All Particles Heatmap — full_contacts for full 3D spatial context
+            2. Guard Volume Boundary — translucent shell at guard margin
+            3. Boundary Particles — excluded particles in gray (hidden)
+            4. Weak Zones — interior-only, 0-4 contacts (hidden)
+            5. Centroids — interior-only point cloud (hidden)
+        
         Args:
             best_labels_path: Path to best_labels.npy file
             connectivity: Connectivity for contact counting (6 or 26)
@@ -226,6 +199,12 @@ class NapariViewerManager:
             FileNotFoundError: If required files don't exist
             RuntimeError: If Napari is not available
         """
+        from scipy.ndimage import binary_erosion  # type: ignore
+        from ..contact.guard_volume import (
+            count_contacts_with_guard, calculate_guard_margin, create_guard_volume_mask,
+        )
+        from ..contact.visualization import create_contact_count_map
+        
         if not NAPARI_AVAILABLE:
             raise RuntimeError("Napari is not installed")
         
@@ -236,131 +215,125 @@ class NapariViewerManager:
         best_labels = np.load(best_labels_path)
         
         logger.info(f"Opening Napari with contact-colored result (r={best_radius})")
-        logger.info(f"Labels shape: {best_labels.shape}")
-        logger.info(f"Unique particles: {best_labels.max()}")
+        logger.info(f"Labels shape: {best_labels.shape}, unique particles: {best_labels.max()}")
         
         # Calculate contact counts with guard volume filtering
-        from ..contact.guard_volume import count_contacts_with_guard
-        from ..contact.visualization import get_discrete_contact_colormap
-        
         logger.info("Calculating contact counts with guard volume filtering...")
-        full_contacts, contact_counts, guard_stats = count_contacts_with_guard(
+        full_contacts, interior_contacts, guard_stats = count_contacts_with_guard(
             best_labels, connectivity=connectivity
         )
         logger.info(
-            f"Guard volume: {guard_stats['interior_particles']} interior particles "
-            f"out of {guard_stats['total_particles']} total "
+            f"Guard volume: {guard_stats['interior_particles']} interior / "
+            f"{guard_stats['total_particles']} total "
             f"({guard_stats['excluded_particles']} excluded)"
         )
         
-        # Create particle_id -> color mapping based on contact counts
-        labels_colors = self._create_contact_color_mapping(contact_counts)
+        # Compute guard volume margin and mask
+        margin = calculate_guard_margin(best_labels)
+        guard_mask = create_guard_volume_mask(best_labels.shape, margin)
         
         # Create or reuse viewer
         title = f"3D Particle Analysis - Contact Visualization (r={best_radius})"
         viewer = self.get_or_create_viewer(title)
         
         # ========================================
-        # Layer 1: Particle Contact Heatmap (Property Mapping)
+        # Layer 1: All Particles Heatmap (full spatial context)
         # ========================================
-        logger.info("Creating Layer 1: Particle Contact Heatmap...")
-        
-        # Create contact count map: replace each voxel's label ID with its particle's contact count
-        from ..contact.visualization import create_contact_count_map
-        contact_map = create_contact_count_map(best_labels, contact_counts)
-        
-        # Add as Image layer with colormap
-        # Use 'turbo' colormap: blue (low contacts) -> red (high contacts)
-        viewer.add_image(
-            contact_map,
-            name=f"Contact Heatmap (r={best_radius})",
-            colormap='turbo',
-            opacity=1.0,
-            rendering='mip',  # Maximum Intensity Projection
-            visible=True  # Default: visible
-        )
-        logger.info("✅ Layer 1 added: Contact Heatmap (visible)")
-        
-        # ========================================
-        # Layer 2: Weak Zone Map (Thresholding & Transparency)
-        # ========================================
-        logger.info("Creating Layer 2: Weak Zone Map...")
-        
-        # Create weak zone map: same as contact_map but only showing 0-4 contacts
-        weak_zone_mask = (contact_map >= 0) & (contact_map <= 4)
-        weak_zone_data = np.where(weak_zone_mask, contact_map, np.nan)
+        logger.info("Creating Layer 1: All Particles Heatmap...")
+        full_contact_map = create_contact_count_map(best_labels, full_contacts)
         
         viewer.add_image(
-            weak_zone_data,
-            name=f"Weak Zones (0-4 contacts) (r={best_radius})",
+            full_contact_map,
+            name=f"All Particles Heatmap (r={best_radius})",
             colormap='turbo',
             opacity=1.0,
             rendering='mip',
-            visible=False  # Default: hidden
+            visible=True
         )
-        logger.info("✅ Layer 2 added: Weak Zones (hidden)")
+        logger.info("✅ Layer 1 added: All Particles Heatmap (visible)")
         
         # ========================================
-        # Layer 3: Centroids (Point Cloud)
+        # Layer 2: Guard Volume Boundary (translucent shell)
         # ========================================
-        logger.info("Creating Layer 3: Centroids...")
+        logger.info("Creating Layer 2: Guard Volume Boundary...")
+        eroded = binary_erosion(guard_mask, iterations=NAPARI_GUARD_SHELL_THICKNESS)
+        boundary_shell = guard_mask.astype(np.uint8) - eroded.astype(np.uint8)
         
-        try:
-            from scipy.ndimage import center_of_mass  # type: ignore
-
-            label_ids = np.array(sorted(labels_colors.keys()), dtype=np.int32)
-            if label_ids.size > 0:
-                # Use scipy's center_of_mass with index parameter for efficiency
-                centroids = center_of_mass(best_labels, labels=best_labels, index=label_ids)
-                centroids_arr = np.asarray(centroids, dtype=np.float32)
-                
-                # Filter out invalid entries (NaN/Inf)
-                valid_mask = np.isfinite(centroids_arr).all(axis=1)
-                centroids_arr = centroids_arr[valid_mask]
-                valid_ids = label_ids[valid_mask]
-                
-                if centroids_arr.shape[0] > 0:
-                    # Get colors for valid particles (RGB only, no alpha for points)
-                    face_colors = np.array([
-                        [labels_colors[int(i)][0], labels_colors[int(i)][1], labels_colors[int(i)][2]]
-                        for i in valid_ids
-                    ], dtype=np.float32)
-
-                    viewer.add_points(
-                        centroids_arr,
-                        name=f"Centroids (r={best_radius})",
-                        size=3,
-                        face_color=face_colors,
-                        opacity=0.9,
-                        visible=False  # Default: hidden
-                    )
-                    logger.info(f"✅ Layer 3 added: Centroids ({centroids_arr.shape[0]} points, hidden)")
-                else:
-                    logger.warning("No valid centroids calculated")
-        except Exception as e:
-            logger.warning(f"Failed to create centroids layer: {e}")
-            # Non-critical, continue without centroids
+        viewer.add_image(
+            boundary_shell.astype(np.float32),
+            name=f"Guard Volume Boundary (margin={margin})",
+            colormap=NAPARI_GUARD_BOUNDARY_COLORMAP,
+            opacity=NAPARI_GUARD_BOUNDARY_OPACITY,
+            rendering='mip',
+            blending='additive',
+            visible=True
+        )
+        logger.info(f"✅ Layer 2 added: Guard Volume Boundary (margin={margin} voxels)")
+        
+        # ========================================
+        # Layer 3: Boundary Particles (excluded, shown in gray)
+        # ========================================
+        logger.info("Creating Layer 3: Boundary Particles...")
+        boundary_particle_ids = set(full_contacts.keys()) - set(interior_contacts.keys())
+        boundary_map = np.zeros_like(best_labels, dtype=np.float32)
+        for pid in boundary_particle_ids:
+            boundary_map[best_labels == pid] = 1.0
+        
+        viewer.add_image(
+            boundary_map,
+            name=f"Boundary Particles (excluded: {len(boundary_particle_ids)})",
+            colormap='gray',
+            opacity=NAPARI_BOUNDARY_PARTICLES_OPACITY,
+            rendering='mip',
+            blending='additive',
+            visible=False
+        )
+        logger.info(f"✅ Layer 3 added: Boundary Particles ({len(boundary_particle_ids)}, hidden)")
+        
+        # ========================================
+        # Layer 4: Weak Zones (interior only, reliable data)
+        # ========================================
+        logger.info("Creating Layer 4: Weak Zones (interior only)...")
+        interior_contact_map = create_contact_count_map(best_labels, interior_contacts)
+        weak_zone_mask = (interior_contact_map > 0) & (interior_contact_map <= 4)
+        weak_zone_data = np.where(weak_zone_mask, interior_contact_map, np.nan)
+        
+        viewer.add_image(
+            weak_zone_data,
+            name=f"Weak Zones (interior, 0-4 contacts) (r={best_radius})",
+            colormap='turbo',
+            opacity=1.0,
+            rendering='mip',
+            visible=False
+        )
+        logger.info("✅ Layer 4 added: Weak Zones (hidden)")
         
         # Log metadata if provided
         if metadata:
             metadata_text = "\n".join([f"{k}: {v}" for k, v in metadata.items()])
             logger.info(f"Best result metadata:\n{metadata_text}")
         
-        # Log contact statistics
-        if contact_counts:
-            contact_values = list(contact_counts.values())
+        # Log contact statistics (both full and interior)
+        if full_contacts:
+            full_values = list(full_contacts.values())
             logger.info(
-                f"Contact statistics: "
-                f"mean={np.mean(contact_values):.2f}, "
-                f"median={np.median(contact_values):.1f}, "
-                f"range=[{min(contact_values)}, {max(contact_values)}]"
+                f"Contact statistics (all): "
+                f"mean={np.mean(full_values):.2f}, "
+                f"median={np.median(full_values):.1f}, "
+                f"range=[{min(full_values)}, {max(full_values)}]"
+            )
+        if interior_contacts:
+            interior_values = list(interior_contacts.values())
+            logger.info(
+                f"Contact statistics (interior): "
+                f"mean={np.mean(interior_values):.2f}, "
+                f"median={np.median(interior_values):.1f}, "
+                f"range=[{min(interior_values)}, {max(interior_values)}]"
             )
         
         # Set optimal view
-        viewer.dims.ndisplay = NAPARI_NDISPLAY_3D  # 3D mode
-        viewer.camera.angles = NAPARI_DEFAULT_CAMERA_ANGLES  # Nice viewing angle
-        
-        # Show viewer window
+        viewer.dims.ndisplay = NAPARI_NDISPLAY_3D
+        viewer.camera.angles = NAPARI_DEFAULT_CAMERA_ANGLES
         viewer.window.show()
         
         logger.info("✅ Napari viewer opened with contact coloring")

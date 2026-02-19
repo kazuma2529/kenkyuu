@@ -51,23 +51,28 @@ def calculate_max_particle_radius(labels: np.ndarray) -> float:
 def calculate_guard_margin(
     labels: np.ndarray,
     min_margin: int = 10,
-    margin_multiplier: float = 0.3
+    margin_multiplier: float = 2.0
 ) -> int:
     """Calculate guard margin based on maximum particle size.
     
     The margin is calculated as:
     margin = max(max_particle_radius × margin_multiplier, min_margin)
     
-    However, the margin is limited to ensure at least 88% of the volume
-    remains as interior region in each dimension (6% margin on each side).
+    Theoretical basis (margin_multiplier=2.0):
+    - An interior particle's center is >= margin from the boundary.
+    - Its surface is >= (margin - r_max) = r_max from the boundary.
+    - An unseen particle entirely outside the volume can extend at most
+      r_max inward from the boundary.
+    - Therefore, no unseen particle can reach an interior particle's surface,
+      guaranteeing zero missed contacts.
     
-    The goal is to keep approximately 60-70% of particles in the interior
-    for statistically meaningful analysis while excluding edge effects.
+    If the resulting margin is too large relative to the volume size
+    (interior volume < 20%), a warning is logged.
     
     Args:
         labels: 3D labeled volume
         min_margin: Minimum margin in voxels (default: 10 = 140μm at 14μm/voxel)
-        margin_multiplier: Multiplier for max particle radius (default: 0.3)
+        margin_multiplier: Multiplier for max particle radius (default: 2.0)
         
     Returns:
         Guard margin in voxels (int)
@@ -76,28 +81,25 @@ def calculate_guard_margin(
     calculated_margin = int(np.ceil(max_radius * margin_multiplier))
     margin = max(calculated_margin, min_margin)
     
-    # Limit margin to ensure at least 88% of each dimension remains as interior
-    # (6% margin on each side)
+    # Check interior volume ratio and warn if too small
     Z, H, W = labels.shape
-    max_allowed_margin = min(
-        int(Z * 0.06),  # At least 88% interior = 6% margin on each side
-        int(H * 0.06),
-        int(W * 0.06)
+    remaining_ratio = (
+        max(0, Z - 2 * margin) / Z *
+        max(0, H - 2 * margin) / H *
+        max(0, W - 2 * margin) / W
     )
     
-    if margin > max_allowed_margin:
+    if remaining_ratio < 0.20:
         logger.warning(
-            f"Guard margin {margin} voxels exceeds maximum allowed {max_allowed_margin} voxels "
-            f"(limited by volume size {labels.shape}). Using {max_allowed_margin} voxels instead."
+            f"Guard margin {margin} voxels leaves only {remaining_ratio*100:.1f}% interior volume "
+            f"(volume shape: {labels.shape}). "
+            f"Statistical reliability may be low. Consider using a larger scan volume."
         )
-        margin = max_allowed_margin
-    
-    # Ensure margin is at least min_margin (but not larger than allowed)
-    margin = max(min(margin, max_allowed_margin), min_margin)
     
     logger.info(
         f"Guard margin: {margin} voxels "
-        f"(calculated: {calculated_margin}, min: {min_margin}, max_allowed: {max_allowed_margin})"
+        f"(max_radius: {max_radius:.1f}, calculated: {calculated_margin}, "
+        f"min: {min_margin}, interior_volume_ratio: {remaining_ratio*100:.1f}%)"
     )
     return margin
 

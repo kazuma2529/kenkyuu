@@ -29,15 +29,14 @@ class OptimizationWorker(QThread):
     stage_changed = pyqtSignal(str)  # Processing stage (e.g., "watershed", "contacts", "optimization")
     
     def __init__(self, volume: np.ndarray, output_dir: str, radii: List[int], connectivity: int = 6,
-                 tau_ratio: float = 0.05, tau_gain_rel: float = 0.003,
-                 contacts_range: tuple[int, int] = (4, 10), smoothing_window: int | None = None):
+                 tau_ratio: float = 0.03,
+                 contacts_range: tuple[int, int] = (5, 9), smoothing_window: int | None = None):
         super().__init__()
         self.volume = volume
         self.output_dir = output_dir
         self.radii = radii
         self.connectivity = connectivity
         self.tau_ratio = tau_ratio
-        self.tau_gain_rel = tau_gain_rel
         self.contacts_range = contacts_range
         self.smoothing_window = smoothing_window
         self.is_cancelled = False
@@ -95,7 +94,6 @@ class OptimizationWorker(QThread):
                 complete_analysis=True,
                 early_stopping=False,
                 tau_ratio=self.tau_ratio,
-                tau_gain_rel=self.tau_gain_rel,
                 contacts_range=self.contacts_range,
                 smoothing_window=self.smoothing_window,
                 volume=self.volume,

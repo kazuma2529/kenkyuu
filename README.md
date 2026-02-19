@@ -1,8 +1,8 @@
 # 3D Particle Analysis Pipeline
 
-**CT スライス画像から 3D 粒子構造を自動解析する GUI ツール（現行実装ベース）**
+**CT スライス画像から 3D 粒子構造を自動解析する GUI ツール**
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![GUI](https://img.shields.io/badge/GUI-Available-blue.svg)](src/particle_analysis/gui/)
 
@@ -10,20 +10,23 @@
 
 ## 📖 目次
 
-1. [このシステムは何をするのか](#目的)
+1. [目的](#目的)
 2. [リポジトリの取得と起動](#リポジトリの取得と起動)
-3. [フォルダ構成（現行）](#フォルダ構成現行)
-4. [処理の流れ（現行実装）](#処理の流れ現行実装)
-5. [接触数可視化機能（3レイヤー表示）](#-接触数可視化機能3レイヤー表示)
-6. [Guard Volume（ガードレール）機能](#️-guard-volumeガードレール機能)
-7. [出力ファイル（現行仕様）](#出力ファイル現行仕様)
-8. [トラブルシューティング](#トラブルシューティング)
+3. [フォルダ構成](#フォルダ構成)
+4. [処理の流れ](#処理の流れ)
+5. [最適 R 選択ロジック（v2.1 PeakCount 方式）](#-最適-r-選択ロジックv21-peakcount-方式)
+6. [接触数可視化機能（3レイヤー表示）](#-接触数可視化機能3レイヤー表示)
+7. [Guard Volume（ガードレール）機能](#️-guard-volumeガードレール機能)
+8. [出力ファイル](#出力ファイル)
+9. [GUI 設定一覧](#-gui-設定一覧)
+10. [トラブルシューティング](#トラブルシューティング)
+11. [変更履歴](#変更履歴)
 
 ---
 
 ## 🎯 目的
 
-このシステムは、**CT スキャンで撮影した複数の TIF/TIFF スライス画像から、3D 空間内の粒子（砂粒など）を高精度に二値化・分割し、接触数の傾向を評価しつつ最適な分割半径 r を自動決定**するためのツールです。GUI からマウス操作のみで実行できます。
+**CT スキャンで撮影した複数の TIF/TIFF スライス画像から、3D 空間内の粒子（砂粒など）を高精度に二値化・分割し、接触数の傾向を評価しつつ最適な分割半径 r を自動決定**するツールです。GUI からマウス操作のみで実行できます。
 
 ---
 
@@ -36,8 +39,6 @@ git clone <YOUR_REPO_URL>
 cd kenkyuu
 ```
 
-Windows PowerShell をお使いの場合は、上記コマンドを PowerShell/Terminal にそのまま貼り付けてください。
-
 ### 2) 依存関係インストール
 
 ```bash
@@ -47,22 +48,16 @@ pip install -r requirements.txt
 pip install "napari[all]" qtpy matplotlib PySide6
 ```
 
-注: GUI 依存はスリム化のため `requirements.txt` に必ずしも含めていません。GUI 利用時に上記を追加インストールしてください。
-
 ### 3) （推奨）CT画像の前処理（コントラスト付与）
 
-撮影した CT の TIF/TIFF を **そのまま GUI に入れるよりも**、先に `CT_Processor_APP.py` を使ってコントラストを調整した画像に置き換えると、二値化や分割が安定して **より良い結果になりやすい**ことが分かっています。
+撮影した CT の TIF/TIFF を **そのまま GUI に入れるよりも**、先に `CT_Processor_APP.py` でコントラストを調整すると、二値化や分割が安定します。
 
 ```bash
 python CT_Processor_APP.py
 ```
 
-起動後、GUI 上で以下を指定してください。
-
 - **入力フォルダ**: 元の TIF/TIFF が直接並んでいるフォルダ
-- **保存先フォルダ**: 前処理後画像の出力先フォルダ（自動作成されます）
-
-前処理後は、保存先フォルダに **同名の TIF/TIFF** が出力されます。以降の解析は、この保存先フォルダを入力として使ってください。
+- **保存先フォルダ**: 前処理後画像の出力先（自動作成）
 
 ### 4) GUI の起動
 
@@ -70,51 +65,63 @@ python CT_Processor_APP.py
 python scripts/run_gui.py
 ```
 
-GUI 上で「📁 Select CT Images Folder」から **前処理後の TIF/TIFF 画像フォルダ（推奨）**を選択し、「🚀 分析開始！(GO)」を押してください。
+「📁 Select CT Images Folder」→ 前処理済みフォルダを選択 →「🚀 分析開始！(GO)」
 
 ---
 
-## 🏗️ フォルダ構成（現行）
+## 🏗️ フォルダ構成
 
 ```
 kenkyuu/
-│
 ├── README.md
-├── CT_Processor_APP.py        # CT画像の前処理（コントラスト一括変換）
+├── CT_Processor_APP.py              # CT画像の前処理（コントラスト一括変換）
 ├── requirements.txt
 ├── config/
 │   └── optimized_sand_particles.yaml
 ├── scripts/
-│   ├── run_gui.py              # GUI ランチャ
-│   └── view_volume.py          # 3D 可視化（補助）
-└── src/particle_analysis/
-    ├── __init__.py
-    ├── processing.py           # 3D 二値化（高精度 M2 実装）
-    ├── visualize.py            # Napari 可視化ユーティリティ
-    ├── config.py               # パイプライン設定（構造体）
+│   ├── run_gui.py                   # GUI ランチャ
+│   └── view_volume.py               # 3D 可視化（補助）
+└── src/particle_analysis/           # メインパッケージ (v2.1.0)
+    ├── __init__.py                  # パッケージ公開API
+    ├── processing.py                # 3D 二値化（2段階Otsu, uint16精度）
+    ├── visualize.py                 # Napari 可視化ユーティリティ
+    ├── config.py                    # パイプライン設定（dataclass群）
     ├── utils/
-    │   ├── common.py
-    │   └── file_utils.py       # 画像ファイル取得（自然順）
+    │   ├── common.py                # Timer, setup_logging
+    │   └── file_utils.py            # 画像ファイル取得（自然順ソート）
     ├── contact/
-    │   └── core.py             # 接触数計算・統計（保存APIは任意利用）
+    │   ├── core.py                  # 接触数計算（隣接ラベル走査）
+    │   ├── guard_volume.py          # Guard Volume（境界粒子除外）
+    │   └── visualization.py         # 接触数ベース3D可視化
     ├── volume/
-    │   ├── core.py             # 分割アルゴリズム（侵食→種→EDT→Watershed）
-    │   ├── optimizer.py        # r 最適化と結果保存（CSV/labels）
-    │   ├── data_structures.py  # 結果データ構造
-    │   └── metrics/
-    │       ├── basic.py        # 最大粒子割合など
-    │       └── ...
+    │   ├── core.py                  # 侵食→種→EDT→Watershed 分割
+    │   ├── optimizer.py             # r最適化オーケストレーション + R選択ロジック
+    │   ├── data_structures.py       # OptimizationResult / OptimizationSummary
+    │   ├── metrics/
+    │   │   ├── basic.py             # 粒子体積・最大粒子割合
+    │   │   ├── dominance.py         # HHI・Gini・Top-k share
+    │   │   └── stability.py         # VI（Variation of Information）・Dice
+    │   └── optimization/
+    │       ├── utils.py             # 膝点検出（kneedle）
+    │       └── algorithms.py        # Pareto+distance（フォールバック用）
     └── gui/
-        ├── main_window.py      # メインUI（簡単操作＋詳細設定）
-        ├── pipeline_handler.py # 3D 二値化（インメモリ、非保存）
-        ├── workers.py          # 最適化ワーカー（バックグラウンド）
-        ├── config.py           # GUI 定数（出力名など）
-        ├── napari_integration.py, widgets.py, ...
+        ├── main_window.py           # メインUI（簡単操作＋詳細設定）
+        ├── workers.py               # 最適化バックグラウンドワーカー
+        ├── pipeline_handler.py      # 3D 二値化パイプライン
+        ├── widgets.py               # カスタムウィジェット（結果テーブル等）
+        ├── metrics_calculator.py    # GUI用メトリクス計算
+        ├── results_export.py        # ヒストグラム/CSV出力
+        ├── napari_integration.py    # Napari連携（3D表示）
+        ├── config.py                # GUI定数
+        ├── plot_utils.py            # グラフ描画ヘルパー
+        ├── utils.py                 # GUI汎用ユーティリティ
+        ├── launcher.py              # GUI起動エントリポイント
+        └── style.qss                # Qt スタイルシート
 ```
 
 ---
 
-## 🔄 処理の流れ（現行実装）
+## 🔄 処理の流れ
 
 ### ステップ 1: 📸 高精度 3D 二値化（インメモリ）
 
@@ -124,89 +131,101 @@ kenkyuu/
 - 小物体除去・任意クロージング
 
 実装: `processing.load_and_binarize_3d_volume()`
-出力: 二値ボリューム（メモリ内）、統計情報（GUI ログに表示）
 
 ### ステップ 2: ✂️ 粒子分割（半径 r を走査）
 
 - 半径 r の球状構造要素で侵食 → 種領域ラベル
 - EDT を用いた負距離で Watershed 復元
-- 粒子数、最大粒子割合（largest_particle_ratio）を計算
-- （オプション）同一ラベルから接触数平均を計算（6/26 連結性は GUI で選択）
+- 粒子数・最大粒子割合・平均接触数（Guard Volume 内部粒子のみ）を計算
 
-実装: `volume.core.split_particles_in_memory()`、`volume.metrics.basic.calculate_largest_particle_ratio()`
+実装: `volume.core.split_particles_in_memory()`
 
-### ステップ 3: 🎯 r の自動選択（ハード制約＋限界効用＋接触レンジ）
+### ステップ 3: 🎯 r の自動選択（ハード制約＋ピーク粒子数＋接触レンジ）
 
-1. r\* を決定: 最初に `largest_particle_ratio ≤ τratio` を満たす r
-2. r ≥ r\* で同時成立を探索: `Δcount ≤ τgain_abs` かつ `mean_contacts ∈ [cmin, cmax]`
-3. フォールバック: (同時成立) → (接触レンジのみ) → (r\*) → (max r)
+**[詳細は次セクション参照](#-最適-r-選択ロジックv21-peakcount-方式)**
 
-既定: τratio=0.05、τgain_rel=0.003（=0.3% of base）、[cmin,cmax]=[4,10]、平滑化オプションあり
-
-実装: `volume.optimizer.optimize_radius_advanced()` 内 `select_radius_by_constraints()`
+実装: `volume.optimizer.select_radius_by_constraints()`
 出力: 最適 r、全 r の指標テーブル（CSV）、最適 r のラベル配列（npy）
 
 ### ステップ 4: 👀 可視化（任意）
 
-- GUI の「🔍 View 3D Results」で Napari 表示（ベスト r のラベル）
-- GUI の「🎨 View 3D (Color by Contacts)」で接触数に基づく3レイヤー可視化
-- GUI タブで以下の分布グラフを表示（ファイル出力なし、すべて Guard Volume 内部粒子のみ）:
-  - 「📊 接触分布」: 接触数ヒストグラム（Guard Volume Interior）
-  - 「📊 体積分布」: 粒子体積ヒストグラム（Guard Volume Interior）
-  - 「📊 体積vs接触数」: 粒子体積と接触数の散布図（回帰直線・相関係数 R 付き）
+- 「🔍 View 3D Results」: Napari でベスト r のラベル表示
+- 「🎨 View 3D (Color by Contacts)」: 接触数に基づく3レイヤー可視化
+- GUI タブ: 接触分布 / 体積分布 / 体積vs接触数 散布図（Guard Volume 内部粒子のみ）
+
+---
+
+## 🎯 最適 R 選択ロジック（v2.1 PeakCount 方式）
+
+v2.1 で R 選択ロジックを全面的に刷新しました。旧方式（限界効用プラトー検出）を廃止し、**ピーク粒子数方式**を導入しています。
+
+### 背景と動機
+
+旧方式は「粒子数の変化量が閾値以下になった点＝プラトー」として R を決定していましたが、以下の問題がありました：
+
+- プラトーと判定された点が、実は粒子数が**減少し始めた**直後である可能性がある
+- 過収縮（erosion が強すぎて粒子が消滅し始めた状態）を最適値として選んでしまうリスク
+
+### 新しい選択ロジック
+
+3つの評価基準に基づいて最適な R を決定します：
+
+#### 基準 ①: 最大粒子割合（largest_particle_ratio ≤ 3%）
+
+- **r\*** = `largest_particle_ratio ≤ τratio (0.03)` を最初に満たす R
+- これにより、分割不足の R を除外する
+
+#### 基準 ②: ピーク粒子数（R_peak）
+
+- r\* 以降かつ `lpr ≤ τratio` を満たす R 群の中で、**粒子数が最大**となる R を `R_peak` とする
+- 旧方式のプラトー検出と異なり、「粒子が減少し始める直前（＝最も多くの粒子が検出できた点）」を重視する
+
+#### 基準 ③: 平均接触数（mean_contacts ∈ [5, 9]）
+
+- 振とう充填の理論値（平均接触数 ≈ 7）に基づき、物理的に妥当な接触数の範囲を [5, 9] に設定
+
+### 選択優先順位
+
+| 優先度           | 条件                                     | reason フラグ       |
+| ---------------- | ---------------------------------------- | ------------------- |
+| **(A)** 最優先   | R_peak の接触数が [5, 9] 内              | `peak_and_contacts` |
+| **(B)**          | r\* 以降で接触数が [5, 9] に入る最初の R | `contacts_only`     |
+| **(C)**          | R_peak（接触数制約なし）                 | `r_peak`            |
+| **(D)**          | r\*（接触数・ピーク制約なし）            | `r_star`            |
+| **(E)** 最終手段 | 最大 R                                   | `max_r`             |
+
+### フォールバック
+
+上記の制約ベース選択が例外で失敗した場合は、**Pareto + normalized distance** 法にフォールバックします（HHI・膝点距離・VI安定性の3目的最適化）。
+
+### デフォルトパラメータ
+
+| パラメータ         | デフォルト | 説明                                |
+| ------------------ | ---------- | ----------------------------------- |
+| `tau_ratio`        | 0.03 (3%)  | 最大粒子割合の閾値                  |
+| `contacts_range`   | (5, 9)     | 許容平均接触数の範囲                |
+| `smoothing_window` | None       | 移動平均窓（安定化用、1 or 2 推奨） |
 
 ---
 
 ## 🎨 接触数可視化機能（3レイヤー表示）
 
-GUI の「🎨 View 3D (Color by Contacts)」ボタンから、粒子の接触数に基づく3次元可視化が可能です。以下の3つのレイヤーが表示され、Napari上で切り替え可能です。
+GUI の「🎨 View 3D (Color by Contacts)」から、粒子の接触数に基づく3次元可視化が可能です。
 
-### Layer 1: Contact Heatmap（粒子接触ヒートマップ）【デフォルト表示: 可視】
+### Layer 1: Contact Heatmap（粒子接触ヒートマップ）【デフォルト: 可視】
 
-- **手法**: Property Mapping
-- **説明**: 各粒子の3D形状全体を、その粒子の接触数に応じて色付けします
-- **カラーマップ**: `turbo`（青→緑→黄→赤のグラデーション）
-  - **青系（低接触）**: 接触数が少ない粒子（0～4接触）
-  - **緑系（中接触）**: 中程度の接触数（5～9接触）
-  - **黄～赤系（高接触）**: 接触数が多い粒子（10接触以上）
-- **表示方法**: Maximum Intensity Projection (MIP) レンダリング
-- **用途**: 粒子形状そのものを見ながら、接触数の分布を直感的に把握
-- **色の詳細**:
-  - 接触数が少ないほど青に近く、多いほど赤に近い色で表示されます
-  - 連続的なグラデーションにより、接触数の微細な違いも視覚的に識別可能
+- **カラーマップ**: `turbo`（青→緑→黄→赤）
+- 各粒子の3D形状全体を接触数で色付け（MIP レンダリング）
 
-### Layer 2: Weak Zones（破断予測・危険地帯マップ）【デフォルト: 非表示】
+### Layer 2: Weak Zones（破断予測マップ）【デフォルト: 非表示】
 
-- **手法**: Thresholding & Transparency
-- **説明**: 構造的な弱点（低接触粒子）のみを強調表示します
-- **表示条件**:
-  - **接触数 0～4**: 100%不透明度で表示（警告色として強調）
-  - **接触数 5以上**: 完全に透明（非表示）
-- **カラーマップ**: `turbo`（Layer 1と同じ）
-  - **接触数 0～4**: 青～緑系の色で表示（低接触領域を強調）
-  - **接触数 5以上**: 完全に透明（非表示）
-- **用途**: 破断起点の候補となる低接触領域を「血管のように」浮き上がらせて可視化
-- **色の詳細**:
-  - 接触数0～4の粒子のみが表示され、接触数が少ないほど青に近い色になります
-  - 5接触以上の粒子は完全に非表示になるため、弱い結合部分だけが視覚的に浮き上がります
+- 接触数 0～4 の粒子のみ表示（5以上は透明）
+- 破断起点の候補となる低接触領域を強調
 
 ### Layer 3: Centroids（重心点群）【デフォルト: 非表示】
 
-- **手法**: Point Cloud
-- **説明**: 各粒子の重心位置を点として表示し、接触数に応じて色分けします
-- **色分けルール**（離散的3段階）:
-  - **接触数 0～4**: 明るい黄緑 `(0.6, 0.9, 0.2, 1.0)` - 低接触（潜在的な弱いゾーン）
-  - **接触数 5～9**: 明るめシアン `(0.10, 0.70, 0.90, 1.0)` - 中接触（一般的）
-  - **接触数 10以上**: 明るい赤橙 `(1.00, 0.35, 0.15, 1.0)` - 高接触（高密度・強度が高い）
-- **点のサイズ**: 3ピクセル
-- **用途**: 内部構造を迅速に把握。表面レンダリングでは隠れる内部粒子も確認可能
-
-### 使用方法
-
-1. GUIで解析を実行
-2. 解析完了後、「🎨 View 3D (Color by Contacts)」ボタンをクリック
-3. Napariが開き、3つのレイヤーが自動的に追加されます
-4. Napariのレイヤーリストで各レイヤーの表示/非表示を切り替え可能
+- 各粒子の重心を点表示（接触数で3段階色分け）
+- 内部構造を迅速に把握
 
 ---
 
@@ -214,76 +233,46 @@ GUI の「🎨 View 3D (Color by Contacts)」ボタンから、粒子の接触�
 
 境界効果を排除し、より正確な平均接触数を算出するための機能です。
 
-### 目的
-
-ボリュームの端にある粒子は、本来の接触数を正確に反映できないため、統計から除外します。ただし、内部粒子との接触数計算には境界粒子も含まれます。
-
 ### 動作原理
 
-1. **マージン計算**: 最大粒子の等価半径に基づいて、適切なマージン（境界からの距離）を自動計算
-   - 計算式: `margin = max(max_particle_radius × 0.3, 10 voxels)`
-   - ただし、各次元の6%を超えないように制限（内部領域が88%以上を確保）
-   - 1 voxel = 14μm の場合、最小マージンは約140μm
-
-2. **内部粒子の判定**: マージン以内の領域（Guard Volume）に完全に含まれる粒子のみを「内部粒子」として判定
-
+1. **マージン計算**: `margin = max(max_particle_radius × 2.0, 10 voxels)`
+2. **内部粒子の判定**: マージン内に完全に含まれる粒子のみを「内部粒子」として判定
 3. **統計計算**: 内部粒子のみの接触数で平均値を計算
 
-### 実装詳細
-
-- **モジュール**: `src/particle_analysis/contact/guard_volume.py`
-- **主要関数**:
-  - `calculate_guard_margin()`: マージンサイズの計算
-  - `create_guard_volume_mask()`: 内部領域のマスク作成
-  - `filter_interior_particles()`: 内部粒子の抽出
-  - `count_contacts_with_guard()`: Guard Volume適用での接触数計算
-
-### 統計情報
-
-解析結果には以下の情報が含まれます：
-
-- **内部粒子数**: Guard Volume内に完全に含まれる粒子数
-- **除外粒子数**: 境界に接する粒子数
-- **平均接触数（内部粒子のみ）**: より正確な統計値
+実装: `contact/guard_volume.py`
 
 ---
 
-## 📊 出力ファイル（現行仕様）
+## 📊 出力ファイル
 
-解析完了後、`output/gui_run_YYYYMMDD_HHMM/` に以下のファイルが保存されます：
+解析完了後、`output/gui_run_YYYYMMDD_HHMM/` に保存されます：
 
 ### 最適化結果
 
-| ファイル名                 | 説明                                                                            | 形式  |
-| -------------------------- | ------------------------------------------------------------------------------- | ----- |
-| `optimization_results.csv` | r ごとの集計（`radius, particle_count, largest_particle_ratio, mean_contacts`） | CSV   |
-| `labels_r{best}.npy`       | 採択 r のラベル 3D 配列（int32）                                                | NumPy |
+| ファイル名                 | 説明                                                                             | 形式  |
+| -------------------------- | -------------------------------------------------------------------------------- | ----- |
+| `optimization_results.csv` | r ごとの集計（radius, particle_count, largest_particle_ratio, mean_contacts 等） | CSV   |
+| `labels_r{best}.npy`       | 採択 r のラベル 3D 配列（int32）                                                 | NumPy |
 
-### グラフデータ（Excel等での再作成用）
+### グラフデータ（Guard Volume 内部粒子のみ）
 
-解析完了時に、Guard Volume 内部粒子のみを対象とした以下の CSV が自動出力されます：
-
-| ファイル名                 | 列                                              | 説明                                                            |
-| -------------------------- | ----------------------------------------------- | --------------------------------------------------------------- |
-| `contact_distribution.csv` | `particle_id`, `contact_count`                  | 接触数分布（ヘッダに平均・中央値・内部/除外粒子数を記載）       |
-| `volume_distribution.csv`  | `particle_id`, `volume_voxels`                  | 体積分布（ヘッダに平均・中央値・内部/除外粒子数を記載）         |
-| `volume_vs_contacts.csv`   | `particle_id`, `volume_voxels`, `contact_count` | 体積 vs 接触数散布図（ヘッダに線形回帰傾き・相関係数 R を記載） |
-
-**注**: 各 CSV の先頭行は `#` で始まる統計情報コメントです。Excel で開く際はそのまま開けます。
-
-### 保存しないもの（設計方針）
-
-- `volume.npy`（ボリュームはインメモリ処理のみ）
-- 中間の `labels_r*.npy`（採択 r のみ保存）
-- グラフ画像（PNG 等）— GUI 内の可視化に限定
+| ファイル名                 | 説明                                      |
+| -------------------------- | ----------------------------------------- |
+| `contact_distribution.csv` | 接触数分布（ヘッダに統計情報）            |
+| `volume_distribution.csv`  | 体積分布（ヘッダに統計情報）              |
+| `volume_vs_contacts.csv`   | 体積 vs 接触数（ヘッダに回帰傾き・相関R） |
 
 ---
 
-## 🧩 よく使う設定（GUI）
+## 🧩 GUI 設定一覧
 
-- 最大半径: デフォルト 10（`Advanced Settings` で変更）
-- 連結性: デフォルト 6（面接触のみ。26 は辺・頂点も含み過大評価傾向）
-- τ 比・限界効用・接触レンジ・平滑窓: `Advanced Settings` から変更可
+| 設定                       | デフォルト      | 場所              |
+| -------------------------- | --------------- | ----------------- |
+| 最大半径                   | 10              | Advanced Settings |
+| 連結性                     | 6（面接触のみ） | Advanced Settings |
+| τratio（最大粒子割合閾値） | 0.03 (3%)       | Advanced Settings |
+| 接触数レンジ [min, max]    | [5, 9]          | Advanced Settings |
+| 平滑窓                     | None            | Advanced Settings |
 
 ---
 
@@ -295,24 +284,69 @@ GUI の「🎨 View 3D (Color by Contacts)」ボタンから、粒子の接触�
 pip install "napari[all]" qtpy matplotlib PySide6
 ```
 
-### Qt バックエンド問題（競合解消）
+### Qt バックエンド問題
 
 ```bash
 pip uninstall -y PySide6 PyQt5 PyQt6
-pip install -y PySide6
+pip install PySide6
 ```
 
 ### 画像が見つからない / 読み込めない
 
-- フォーマットは TIF/TIFF を推奨（GUI は TIF/TIFF のみを 3D Otsu 対象に認識）
-- サブフォルダではなく「画像が直接並ぶフォルダ」を選択してください
-- 画像のコントラストが低く二値化が不安定な場合は、事前に `CT_Processor_APP.py` で前処理したフォルダを入力にしてください
+- TIF/TIFF 形式を使用（GUI は TIF/TIFF のみ認識）
+- 画像が直接並ぶフォルダを選択（サブフォルダ不可）
+- コントラストが低い場合は `CT_Processor_APP.py` で前処理
 
 ### メモリ不足
 
-- 現行実装はインメモリ処理。大規模データでは RAM 余裕のある環境を推奨
-- 画像を間引く/領域を切り出す、最大半径を抑える、で軽減可能
+- インメモリ処理のため RAM に余裕が必要
+- 画像間引き・領域切出し・最大半径の抑制で軽減可能
 
 ---
 
-**3D Particle Analysis Pipeline v2.x** — 研究用途の再現性と操作性を両立する、GUI 主導の最新実装
+## 📝 変更履歴
+
+### v2.1.0 — R 選択ロジック刷新・リファクタリング
+
+#### R 選択ロジックの変更
+
+- **旧**: 限界効用プラトー検出（`τgain_rel` パラメータ）で R を決定
+- **新**: ピーク粒子数方式（`R_peak`）で R を決定
+  - `largest_particle_ratio ≤ 3%` を満たす R 群の中で粒子数最大の R を `R_peak` とする
+  - `R_peak` の接触数が [5, 9] 内なら最優先で採用
+
+#### デフォルト値の変更
+
+| パラメータ       | 旧        | 新            | 理由                                     |
+| ---------------- | --------- | ------------- | ---------------------------------------- |
+| `tau_ratio`      | 0.05 (5%) | **0.03 (3%)** | 5%では分割不足が残る                     |
+| `contacts_range` | [4, 10]   | **[5, 9]**    | 振とう充填理論値（平均接触数≈7）に基づく |
+| `tau_gain_rel`   | 0.003     | **削除**      | プラトー検出自体を廃止                   |
+
+#### GUI の変更
+
+- **τgain スピンボックスを完全削除**（ロジック廃止に伴い不要）
+- τratio のデフォルトを 0.03 に変更
+- 接触数レンジのデフォルトを [5, 9] に変更
+
+#### コード整理（リファクタリング）
+
+- **レガシー関数を削除**:
+  - `determine_best_radius_advanced()`（重み付き複合スコア方式）
+  - `calculate_composite_score()`（複合スコア計算）
+  - `calculate_coordination_score()`（配位数スコア計算）
+- **未使用 import の削除**: `asdict`, `OrderedDict`, `math`
+- **冗長なコードの修正**: `(output_dir / "").mkdir()` の除去
+- **`__init__.py` 群の整理**: レガシー関数の re-export を全て削除
+- **バージョンを 2.1.0 に更新**
+
+### v2.0.0
+
+- GUI ベースの解析パイプライン（3D Otsu → Watershed → R 最適化）
+- Guard Volume による境界粒子除外
+- 接触数ベース 3D 可視化（3レイヤー）
+- CSV 自動出力（接触分布・体積分布・散布図）
+
+---
+
+**3D Particle Analysis Pipeline v2.1** — 研究用途の再現性と操作性を両立する、GUI 主導の粒子解析ツール

@@ -8,7 +8,7 @@ This package contains the core functionality for 3D particle analysis:
 - Visualization
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __author__ = "3D Particle Analysis Team"
 
 from .processing import load_and_binarize_3d_volume
@@ -17,7 +17,6 @@ from .volume import (
     optimize_radius, optimize_radius_advanced,
     OptimizationResult, OptimizationSummary,
     calculate_particle_volumes, calculate_largest_particle_ratio,
-    determine_best_radius_advanced
 )
 from .contact import count_contacts, save_contact_csv, analyze_contacts
 
@@ -52,7 +51,6 @@ __all__ = [
     "OptimizationSummary",
     "calculate_particle_volumes",
     "calculate_largest_particle_ratio",
-    "determine_best_radius_advanced",
     
     # Contact analysis
     "count_contacts",
