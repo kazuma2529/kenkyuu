@@ -15,7 +15,7 @@
 3. [フォルダ構成](#フォルダ構成)
 4. [処理の流れ](#処理の流れ)
 5. [最適 R 選択ロジック（v2.1 PeakCount 方式）](#-最適-r-選択ロジックv21-peakcount-方式)
-6. [接触数可視化機能（3レイヤー表示）](#-接触数可視化機能3レイヤー表示)
+6. [接触数可視化機能（Napari 5レイヤー表示）](#-接触数可視化機能napari-5レイヤー表示)
 7. [Guard Volume（ガードレール）機能](#️-guard-volumeガードレール機能)
 8. [出力ファイル](#出力ファイル)
 9. [GUI 設定一覧](#-gui-設定一覧)
@@ -82,20 +82,20 @@ kenkyuu/
 │   ├── run_gui.py                   # GUI ランチャ
 │   └── view_volume.py               # 3D 可視化（補助）
 └── src/particle_analysis/           # メインパッケージ (v2.1.0)
-    ├── __init__.py                  # パッケージ公開API
-    ├── processing.py                # 3D 二値化（2段階Otsu, uint16精度）
+    ├── __init__.py                  # パッケージ公開 API
+    ├── processing.py                # 3D 二値化（2段階 Otsu, uint16 精度）
     ├── visualize.py                 # Napari 可視化ユーティリティ
-    ├── config.py                    # パイプライン設定（dataclass群）
+    ├── config.py                    # パイプライン設定（dataclass 群）
     ├── utils/
     │   ├── common.py                # Timer, setup_logging
     │   └── file_utils.py            # 画像ファイル取得（自然順ソート）
     ├── contact/
     │   ├── core.py                  # 接触数計算（隣接ラベル走査）
     │   ├── guard_volume.py          # Guard Volume（境界粒子除外）
-    │   └── visualization.py         # 接触数ベース3D可視化
+    │   └── visualization.py         # 接触数マップ生成（create_contact_count_map）
     ├── volume/
     │   ├── core.py                  # 侵食→種→EDT→Watershed 分割
-    │   ├── optimizer.py             # r最適化オーケストレーション + R選択ロジック
+    │   ├── optimizer.py             # r 最適化オーケストレーション + R 選択ロジック
     │   ├── data_structures.py       # OptimizationResult / OptimizationSummary
     │   ├── metrics/
     │   │   ├── basic.py             # 粒子体積・最大粒子割合
@@ -105,18 +105,18 @@ kenkyuu/
     │       ├── utils.py             # 膝点検出（kneedle）
     │       └── algorithms.py        # Pareto+distance（フォールバック用）
     └── gui/
-        ├── main_window.py           # メインUI（簡単操作＋詳細設定）
-        ├── workers.py               # 最適化バックグラウンドワーカー
-        ├── pipeline_handler.py      # 3D 二値化パイプライン
-        ├── widgets.py               # カスタムウィジェット（結果テーブル等）
-        ├── metrics_calculator.py    # GUI用メトリクス計算
-        ├── results_export.py        # ヒストグラム/CSV出力
-        ├── napari_integration.py    # Napari連携（3D表示）
-        ├── config.py                # GUI定数
-        ├── plot_utils.py            # グラフ描画ヘルパー
-        ├── utils.py                 # GUI汎用ユーティリティ
-        ├── launcher.py              # GUI起動エントリポイント
-        └── style.qss                # Qt スタイルシート
+        ├── main_window.py           # メイン UI（簡単操作＋詳細設定 + 5タブ結果表示）
+        ├── workers.py               # バックグラウンド最適化ワーカー（QThread）
+        ├── pipeline_handler.py      # 3D 二値化パイプライン呼び出し
+        ├── widgets.py               # カスタムウィジェット（ResultsTable, MplWidget 等）
+        ├── metrics_calculator.py    # GUI 用メトリクス計算
+        ├── results_export.py        # 後処理分析 + CSV 出力（InteriorAnalysis）
+        ├── napari_integration.py    # Napari 連携（NapariViewerManager: 3D 表示 3種）
+        ├── config.py                # GUI 定数（Napari 設定含む）
+        ├── plot_utils.py            # Matplotlib ダークテーマ描画ヘルパー
+        ├── utils.py                 # GUI 汎用ユーティリティ（Napari エラー処理等）
+        ├── launcher.py              # GUI 起動エントリポイント
+        └── style.qss                # Qt スタイルシート（ダークテーマ）
 ```
 
 ---
@@ -136,7 +136,8 @@ kenkyuu/
 
 - 半径 r の球状構造要素で侵食 → 種領域ラベル
 - EDT を用いた負距離で Watershed 復元
-- 粒子数・最大粒子割合・平均接触数（Guard Volume 内部粒子のみ）を計算
+- 粒子数・最大粒子割合・平均接触数（Guard Volume 内部粒子のみ）を各 r で計算
+- 処理はすべてインメモリ。最適 r のラベル配列のみ最後に保存
 
 実装: `volume.core.split_particles_in_memory()`
 
@@ -147,11 +148,24 @@ kenkyuu/
 実装: `volume.optimizer.select_radius_by_constraints()`
 出力: 最適 r、全 r の指標テーブル（CSV）、最適 r のラベル配列（npy）
 
-### ステップ 4: 👀 可視化（任意）
+### ステップ 4: � 後処理・グラフ表示
 
-- 「🔍 View 3D Results」: Napari でベスト r のラベル表示
-- 「🎨 View 3D (Color by Contacts)」: 接触数に基づく3レイヤー可視化
-- GUI タブ: 接触分布 / 体積分布 / 体積vs接触数 散布図（Guard Volume 内部粒子のみ）
+解析完了後、バックグラウンドワーカーが最適 r のラベルを再読み込みし、Guard Volume フィルタリングを経て接触数・体積を集計します。結果は GUI の 5 つのタブに表示されます：
+
+| タブ            | 内容                                                                   |
+| --------------- | ---------------------------------------------------------------------- |
+| 📊 最適化の進捗 | 各 r のリアルタイム結果テーブル（粒子数・平均接触数・最大粒子割合 等） |
+| 📊 接触分布     | Guard Volume 内部粒子の接触数ヒストグラム                              |
+| 📊 体積分布     | Guard Volume 内部粒子の体積ヒストグラム                                |
+| 📊 体積vs接触数 | 体積 vs 接触数の散布図（線形回帰・相関係数付き）                       |
+| 🎯 最終結果     | 最適 r・選択理由・統計サマリ + 3D 表示ボタン                           |
+
+### ステップ 5: � 3D 可視化（任意）
+
+「🎯 最終結果」タブの 2 つのボタンから Napari を起動できます：
+
+- 「🔍 View 3D Results」: ベスト r のラベルを Napari でそのまま表示
+- 「🎨 View 3D (Color by Contacts)」: 接触数に基づく 5 レイヤー可視化 **[→ 詳細](#-接触数可視化機能napari-5レイヤー表示)**
 
 ---
 
@@ -208,24 +222,35 @@ v2.1 で R 選択ロジックを全面的に刷新しました。旧方式（限
 
 ---
 
-## 🎨 接触数可視化機能（3レイヤー表示）
+## 🎨 接触数可視化機能（Napari 5レイヤー表示）
 
-GUI の「🎨 View 3D (Color by Contacts)」から、粒子の接触数に基づく3次元可視化が可能です。
+GUI の「🎨 View 3D (Color by Contacts)」から、粒子の接触数に基づく 5 レイヤー構成の 3 次元可視化が可能です。実装: `gui.napari_integration.NapariViewerManager.load_best_labels_with_contacts()`
 
-### Layer 1: Contact Heatmap（粒子接触ヒートマップ）【デフォルト: 可視】
+### Layer 1: All Particles Heatmap【デフォルト: 可視】
 
 - **カラーマップ**: `turbo`（青→緑→黄→赤）
-- 各粒子の3D形状全体を接触数で色付け（MIP レンダリング）
+- 全粒子の 3D 形状を接触数で色付け（MIP レンダリング）
+- `full_contacts`（Guard Volume 外を含む全粒子）を使用し、空間的な全体像を把握
 
-### Layer 2: Weak Zones（破断予測マップ）【デフォルト: 非表示】
+### Layer 2: Guard Volume Boundary【デフォルト: 可視】
 
-- 接触数 0～4 の粒子のみ表示（5以上は透明）
-- 破断起点の候補となる低接触領域を強調
+- Guard Volume の境界シェル（厚さ 2 voxels）を半透明で表示
+- カラーマップ: `green`、opacity: 0.3
+- 内部粒子と境界粒子の区画を視覚的に確認できる
 
-### Layer 3: Centroids（重心点群）【デフォルト: 非表示】
+### Layer 3: Boundary Particles（除外粒子）【デフォルト: 非表示】
 
-- 各粒子の重心を点表示（接触数で3段階色分け）
-- 内部構造を迅速に把握
+- Guard Volume 外の境界粒子のみグレーで表示
+- 統計から除外された粒子数をレイヤー名に表示
+
+### Layer 4: Weak Zones（破断予測マップ）【デフォルト: 非表示】
+
+- **内部粒子のみ**、接触数 0～4 の粒子を `turbo` カラーマップで強調
+- 破断起点の候補となる低接触領域を信頼性の高いデータのみで可視化
+
+### Layer 5 ※ Centroids（重心点群）
+
+> 現在の実装では Layer 5 は追加されていません（将来の拡張用）
 
 ---
 
@@ -249,10 +274,10 @@ GUI の「🎨 View 3D (Color by Contacts)」から、粒子の接触数に基�
 
 ### 最適化結果
 
-| ファイル名                 | 説明                                                                             | 形式  |
-| -------------------------- | -------------------------------------------------------------------------------- | ----- |
-| `optimization_results.csv` | r ごとの集計（radius, particle_count, largest_particle_ratio, mean_contacts 等） | CSV   |
-| `labels_r{best}.npy`       | 採択 r のラベル 3D 配列（int32）                                                 | NumPy |
+| ファイル名                 | 説明                                                                                                                               | 形式  |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| `optimization_results.csv` | r ごとの集計（radius, particle_count, largest_particle_ratio, mean_contacts, interior_particle_count, excluded_particle_count 等） | CSV   |
+| `labels_r{best}.npy`       | 採択 r のラベル 3D 配列（int32）。Napari で直接読み込み可能                                                                        | NumPy |
 
 ### グラフデータ（Guard Volume 内部粒子のみ）
 
@@ -268,11 +293,16 @@ GUI の「🎨 View 3D (Color by Contacts)」から、粒子の接触数に基�
 
 | 設定                       | デフォルト      | 場所              |
 | -------------------------- | --------------- | ----------------- |
-| 最大半径                   | 10              | Advanced Settings |
+| 最大半径                   | 7               | Advanced Settings |
 | 連結性                     | 6（面接触のみ） | Advanced Settings |
 | τratio（最大粒子割合閾値） | 0.03 (3%)       | Advanced Settings |
 | 接触数レンジ [min, max]    | [5, 9]          | Advanced Settings |
 | 平滑窓                     | None            | Advanced Settings |
+
+> **連結性の選択肢**
+>
+> - `6-Neighborhood`（推奨）: 面接触のみ。物理的接触の評価に適切
+> - `26-Neighborhood`: 辺・頂点接触も含む。密充填の場合に使用
 
 ---
 
@@ -306,7 +336,14 @@ pip install PySide6
 
 ## 📝 変更履歴
 
-### v2.1.0 — R 選択ロジック刷新・リファクタリング
+### v2.0.0
+
+- GUI ベースの解析パイプライン（3D Otsu → Watershed → R 最適化）
+- Guard Volume による境界粒子除外
+- 接触数ベース 3D 可視化
+- CSV 自動出力（接触分布・体積分布・散布図）
+
+### v2.1.0 — R 選択ロジック刷新・リファクタリング・Napari 拡張
 
 #### R 選択ロジックの変更
 
@@ -317,17 +354,25 @@ pip install PySide6
 
 #### デフォルト値の変更
 
-| パラメータ       | 旧        | 新            | 理由                                     |
-| ---------------- | --------- | ------------- | ---------------------------------------- |
-| `tau_ratio`      | 0.05 (5%) | **0.03 (3%)** | 5%では分割不足が残る                     |
-| `contacts_range` | [4, 10]   | **[5, 9]**    | 振とう充填理論値（平均接触数≈7）に基づく |
-| `tau_gain_rel`   | 0.003     | **削除**      | プラトー検出自体を廃止                   |
+| パラメータ           | 旧        | 新            | 理由                                     |
+| -------------------- | --------- | ------------- | ---------------------------------------- |
+| `tau_ratio`          | 0.05 (5%) | **0.03 (3%)** | 5% では分割不足が残る                    |
+| `contacts_range`     | [4, 10]   | **[5, 9]**    | 振とう充填理論値（平均接触数≈7）に基づく |
+| `tau_gain_rel`       | 0.003     | **削除**      | プラトー検出自体を廃止                   |
+| `DEFAULT_MAX_RADIUS` | 10        | **7**         | 過収縮を避けるためデフォルトを抑制       |
+
+#### Napari 可視化の拡張（2レイヤー → 4レイヤー）
+
+- **旧**: All Particles Heatmap + Weak Zones の 2 レイヤー
+- **新**: 上記 2 レイヤーに加え、Guard Volume Boundary シェル + Boundary Particles（除外粒子）を追加
+- `NapariViewerManager` クラスに集約（`load_best_labels`, `load_best_labels_with_contacts`, `load_all_radii`）
 
 #### GUI の変更
 
 - **τgain スピンボックスを完全削除**（ロジック廃止に伴い不要）
 - τratio のデフォルトを 0.03 に変更
 - 接触数レンジのデフォルトを [5, 9] に変更
+- 結果タブを 5 タブ構成に整理（最適化進捗 / 接触分布 / 体積分布 / 体積vs接触数 / 最終結果）
 
 #### コード整理（リファクタリング）
 
@@ -336,16 +381,9 @@ pip install PySide6
   - `calculate_composite_score()`（複合スコア計算）
   - `calculate_coordination_score()`（配位数スコア計算）
 - **未使用 import の削除**: `asdict`, `OrderedDict`, `math`
-- **冗長なコードの修正**: `(output_dir / "").mkdir()` の除去
 - **`__init__.py` 群の整理**: レガシー関数の re-export を全て削除
+- **`results_export.py` の追加**: 後処理分析（`InteriorAnalysis`）と CSV 出力を GUI ロジックから分離
 - **バージョンを 2.1.0 に更新**
-
-### v2.0.0
-
-- GUI ベースの解析パイプライン（3D Otsu → Watershed → R 最適化）
-- Guard Volume による境界粒子除外
-- 接触数ベース 3D 可視化（3レイヤー）
-- CSV 自動出力（接触分布・体積分布・散布図）
 
 ---
 
